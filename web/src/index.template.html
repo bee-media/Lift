@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Лифт</title>
+<style>/*CSS*/</style>
+</head>
+<body>
+<header>
+  <h1>🛗 Лифт</h1>
+  <span id="conn" class="badge">подключаюсь…</span>
+</header>
+<nav id="tabs" role="tablist">
+  <button role="tab" data-tab="play" aria-selected="true">Играть</button>
+  <button role="tab" data-tab="settings" aria-selected="false">Настройки</button>
+  <button role="tab" data-tab="calib" aria-selected="false">Калибровка</button>
+  <button role="tab" data-tab="service" aria-selected="false">Сервис</button>
+</nav>
+
+<main>
+<section id="tab-play">
+  <div id="faultcard" class="card fault hidden">
+    <p class="status" id="faulttext"></p>
+    <p class="why">Лифт остановился, чтобы ничего не сломать.</p>
+    <div class="row"><button class="btn primary" id="btn-clear">Попробовать снова</button></div>
+  </div>
+  <div class="play">
+    <div class="shaftwrap" id="shaftwrap"><div class="shaft" id="shaft"></div></div>
+    <div>
+      <div class="card">
+        <p class="status" id="status">…</p>
+        <p class="why" id="why"></p>
+      </div>
+      <div class="card">
+        <h2>Что происходит внутри</h2>
+        <dl class="kv">
+          <dt>Сейчас на</dt><dd id="k-floor">–</dd>
+          <dt>Куда едет</dt><dd id="k-target">–</dd>
+          <dt>Скорость</dt><dd id="k-speed">–</dd>
+          <dt>Высота</dt><dd id="k-pos">–</dd>
+          <dt>Счётчик мотора</dt><dd id="k-counts">–</dd>
+          <dt>Мощность мотора</dt><dd id="k-pwm">–</dd>
+          <dt>Правило</dt><dd id="k-mode">–</dd>
+        </dl>
+        <h2 style="margin-top:14px">Кто нажал кнопку (очередь)</h2>
+        <div class="chips" id="queue"></div>
+        <p class="why" style="margin-top:12px">Красная точка слева от этажа: датчик Холла почувствовал магнит кабины.</p>
+      </div>
+      <div class="card">
+        <h2>Быстрые кнопки</h2>
+        <div class="row">
+          <button class="btn" id="btn-demo">Показать самому</button>
+          <button class="btn" id="btn-slow">Замедлить</button>
+        </div>
+        <p class="why">Задержите палец на кнопке этажа на несколько секунд: этот этаж станет домом, и лифт вернётся туда, если долго стоит.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="tab-settings" class="hidden"><div id="settingsForm"></div></section>
+
+<section id="tab-calib" class="hidden">
+  <div class="card">
+    <h2>Мастер калибровки</h2>
+    <ol>
+      <li>Поставьте кабину между этажами или внизу и нажмите «Найти 1-й этаж».</li>
+      <li>Нажмите «Калибровать»: лифт сам поднимется до верха и запомнит, где стоит каждый датчик.</li>
+      <li>Если какой-то датчик не загорелся, проверьте магнит и провод этого этажа.</li>
+    </ol>
+    <div class="row">
+      <button class="btn primary" id="c-home">Найти 1-й этаж</button>
+      <button class="btn primary" id="c-cal">Калибровать</button>
+      <button class="btn danger" id="c-stop">Стоп</button>
+    </div>
+    <div class="progress"><div id="c-prog"></div></div>
+  </div>
+  <div class="card"><h2>Датчики Холла</h2><table id="c-table"></table></div>
+</section>
+
+<section id="tab-service" class="hidden">
+  <div class="card"><h2>Журнал</h2><div class="log" id="logbox"></div></div>
+  <div class="card" id="otacard">
+    <h2>Обновление прошивки по воздуху</h2>
+    <p class="why" id="otahint">Выберите файл .bin, собранный в Arduino IDE (Скетч → Экспорт скомпилированного бинарного файла).</p>
+    <form id="otaform"><div class="row"><input type="file" id="otafile" accept=".bin"><button class="btn primary" type="submit">Обновить</button></div></form>
+    <div class="progress"><div id="ota-prog"></div></div>
+  </div>
+  <div class="card">
+    <h2>Сброс</h2>
+    <div class="row">
+      <button class="btn danger" id="btn-reset">Вернуть заводские настройки</button>
+      <button class="btn" id="btn-reboot">Перезагрузить лифт</button>
+    </div>
+  </div>
+</section>
+</main>
+<div class="toast" id="toast"></div>
+<script>/*DISPATCHER*/</script>
+<script>/*SIM*/</script>
+<script>/*APP*/</script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 760" font-family="Segoe UI, Arial, sans-serif" font-size="14">
+  <rect width="980" height="760" fill="#ffffff"/>
+  <style>
+    .t{fill:#1c2333}.s{fill:#5d6783;font-size:12px}
+    .w{stroke:#333;stroke-width:2;fill:none}
+    .r{stroke:#d33;stroke-width:2.5;fill:none}
+    .k{stroke:#111;stroke-width:2.5;fill:none}
+    .y{stroke:#c78500;stroke-width:2.5;fill:none}
+    .bx{fill:#f4f6fb;stroke:#888;stroke-width:1.5}
+    .hd{fill:#1c2333;font-size:16px;font-weight:700}
+  </style>
+  <text x="20" y="28" font-size="20" font-weight="700" class="t">Один этаж: что куда припаять</text>
+
+  <!-- КНОПКА -->
+  <text x="20" y="64" class="hd">1. Кнопка вызова (Ø7 мм в панели)</text>
+  <rect class="bx" x="20" y="76" width="280" height="110"/>
+  <circle cx="110" cy="130" r="20" fill="#fff" stroke="#333" stroke-width="2"/>
+  <text x="110" y="135" text-anchor="middle" class="t">SW</text>
+  <path class="w" d="M90 130 H40"/><path class="w" d="M130 130 H260"/>
+  <text x="40" y="118" class="s">GND (общий)</text>
+  <text x="170" y="118" class="s">BTNn → шлейф кнопок</text>
+  <rect x="150" y="146" width="12" height="28" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="168" y="164" class="s">100 нФ параллельно</text>
+
+  <!-- ХОЛЛ -->
+  <text x="330" y="64" class="hd">2. Датчик Холла A3144</text>
+  <rect class="bx" x="330" y="76" width="320" height="170"/>
+  <path d="M390 100 h60 v50 a30 30 0 0 1 -60 0 z" fill="#fff" stroke="#333" stroke-width="2"/>
+  <text x="420" y="130" text-anchor="middle" class="s">плоской</text><text x="420" y="144" text-anchor="middle" class="s">стороной</text><text x="420" y="158" text-anchor="middle" class="s">к вам</text>
+  <path class="r" d="M402 180 V215 H520"/><text x="526" y="219" class="s">1 VCC → +5 В (шина)</text>
+  <path class="k" d="M420 180 V230 H520"/><text x="526" y="234" class="s">2 GND</text>
+  <path class="y" d="M438 180 V200 H520"/><text x="526" y="204" class="s">3 OUT → HALLn</text>
+  <text x="344" y="264" class="s">Магнит южным полюсом к датчику.</text><text x="344" y="280" class="s">100 нФ между VCC и GND у датчика.</text>
+
+  <!-- СВЕТОДИОД -->
+  <text x="680" y="64" class="hd">3. Светодиод WS2812 5 мм</text>
+  <rect class="bx" x="680" y="76" width="280" height="170"/>
+  <circle cx="750" cy="150" r="32" fill="#fff" stroke="#333" stroke-width="2"/>
+  <text x="750" y="154" text-anchor="middle" class="t">LED</text>
+  <path class="w" d="M720 150 H700 V120 H690"/><text x="690" y="112" class="s">DIN ← предыдущий</text>
+  <path class="w" d="M780 150 H820 V120 H830"/><text x="950" y="112" class="s" text-anchor="end">DOUT → следующий</text>
+  <path class="r" d="M742 182 V215 H830"/><text x="836" y="219" class="s">+5 В</text>
+  <path class="k" d="M758 182 V232 H830"/><text x="836" y="236" class="s">GND</text>
+  <text x="694" y="262" class="s">Порядок выводов: по листку продавца</text>
+
+  <!-- ШЛЕЙФЫ -->
+  <text x="20" y="300" class="hd">4. Шлейфы IDC-10 (одинаковая раскладка для кнопок и датчиков)</text>
+  <rect class="bx" x="20" y="314" width="940" height="222"/>
+  <g class="t">
+    <text x="36" y="342" font-weight="700">Контакт</text>
+    <text x="150" y="342">1</text><text x="210" y="342">2</text><text x="270" y="342">3</text><text x="330" y="342">4</text><text x="390" y="342">5</text>
+    <text x="450" y="342">6</text><text x="510" y="342">7</text><text x="570" y="342">8</text><text x="630" y="342">9</text><text x="690" y="342">10</text>
+    <text x="36" y="376" font-weight="700">Б1 кнопки</text>
+    <text x="36" y="410" font-weight="700">Б2 кнопки</text>
+    <text x="36" y="444" font-weight="700">Б3 кнопки</text>
+    <text x="36" y="478" font-weight="700">Х1 Холл</text>
+  </g>
+  <g class="s" text-anchor="middle">
+    <text x="153" y="376">GND</text><text x="213" y="376">эт.1</text><text x="273" y="376">эт.2</text><text x="333" y="376">эт.3</text><text x="393" y="376">эт.4</text><text x="453" y="376">эт.5</text><text x="513" y="376">эт.6</text><text x="573" y="376">эт.7</text><text x="633" y="376">эт.8</text><text x="693" y="376">пусто</text>
+    <text x="153" y="410">GND</text><text x="213" y="410">эт.9</text><text x="273" y="410">эт.10</text><text x="333" y="410">эт.11</text><text x="393" y="410">эт.12</text><text x="453" y="410">эт.13</text><text x="513" y="410">эт.14</text><text x="573" y="410">эт.15</text><text x="633" y="410">эт.16</text><text x="693" y="410">пусто</text>
+    <text x="153" y="444">GND</text><text x="213" y="444">эт.17</text><text x="273" y="444">эт.18</text><text x="333" y="444">эт.19</text><text x="393" y="444">эт.20</text><text x="453" y="444">эт.21</text><text x="513" y="444">эт.22</text><text x="573" y="444">эт.23</text><text x="633" y="444">эт.24</text><text x="693" y="444">пусто</text>
+    <text x="153" y="478">GND</text><text x="213" y="478">HALL1</text><text x="273" y="478">HALL2</text><text x="333" y="478">HALL3</text><text x="393" y="478">HALL4</text><text x="453" y="478">HALL5</text><text x="513" y="478">HALL6</text><text x="573" y="478">HALL7</text><text x="633" y="478">HALL8</text><text x="693" y="478">пусто</text>
+  </g>
+  <text x="36" y="504" class="s">Х2 (этажи 9–16) и Х3 (17–24) устроены так же, как Х1. Питание +5 В для датчиков идёт отдельной шиной.</text>
+  <text x="36" y="522" class="s">Этаж 25: две отдельные жилы: сигнал и GND. Кнопка на 0x21 GPB0, датчик на 0x23 GPB0.</text>
+
+  <!-- ШИНЫ -->
+  <text x="20" y="574" class="hd">5. Проводка вдоль шахты</text>
+  <rect class="bx" x="20" y="588" width="940" height="156"/>
+  <g class="t" font-size="13">
+    <text x="36" y="614">• Шина питания из двух проводов: +5 В (красный) и GND (чёрный), на каждом этаже отвод на датчик и светодиод.</text>
+    <text x="36" y="638">• Светодиоды: DIN первого к выходу 74AHCT125, дальше DOUT одного этажа к DIN следующего (короткие перемычки).</text>
+    <text x="36" y="662">• Кнопки: шлейфы Б1–Б3 идут вдоль шахты, на каждом этаже отвод одной жилы и общего GND.</text>
+    <text x="36" y="686">• Датчики: шлейфы Х1–Х3, на каждом этаже отвод одной сигнальной жилы. Подтяжки 4,7 кОм к 3V3 стоят на плате у MCP.</text>
+    <text x="36" y="710">• К кабине провода не идут вообще: магнит на кабине, всё остальное неподвижное.</text>
+  </g>
+</svg>

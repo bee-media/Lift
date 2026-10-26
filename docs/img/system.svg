@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 640" font-family="Segoe UI, Arial, sans-serif" font-size="14">
+  <rect width="980" height="640" fill="#ffffff"/>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker>
+  </defs>
+  <style>
+    .b{fill:#eef3ff;stroke:#2f6bff;stroke-width:2;rx:10}
+    .p{fill:#fff4e0;stroke:#d98a00;stroke-width:2;rx:10}
+    .g{fill:#e9f8ef;stroke:#1f9d5a;stroke-width:2;rx:10}
+    .t{fill:#1c2333}.s{fill:#5d6783;font-size:12px}
+    .l{stroke:#333;stroke-width:2;fill:none}
+    .r{stroke:#d33;stroke-width:2.5;fill:none}
+    .k{stroke:#444;stroke-width:2.5;fill:none}
+  </style>
+  <text x="20" y="28" font-size="20" font-weight="700" class="t">Общая схема: учебный лифт на ESP32-S3</text>
+
+  <!-- питание -->
+  <rect class="p" x="20" y="60" width="200" height="70"/>
+  <text x="120" y="88" text-anchor="middle" class="t" font-weight="700">Блок питания</text>
+  <text x="120" y="108" text-anchor="middle" class="s">5 В, 3 А (общий плюс 5 В и GND)</text>
+  <path class="r" d="M120 130 V170"/>
+  <circle cx="120" cy="170" r="4" fill="#d33"/>
+  <text x="128" y="160" class="s">+5 В</text>
+  <path class="r" d="M120 170 H340" marker-end="url(#a)"/>
+  <text x="240" y="162" class="s">на 5V ESP32</text>
+  <path class="r" d="M120 170 V610 H735 V592"/>
+  <text x="128" y="540" class="s">+5 В шина: датчики Холла,</text>
+  <text x="128" y="556" class="s">светодиоды, VM драйвера DRV8833</text>
+
+  <!-- ESP32 -->
+  <rect class="b" x="340" y="140" width="250" height="300"/>
+  <text x="465" y="168" text-anchor="middle" class="t" font-weight="700" font-size="16">ESP32-S3</text>
+  <text x="465" y="188" text-anchor="middle" class="s">Wi-Fi, веб-панель, обновление по воздуху</text>
+  <g class="t">
+    <text x="352" y="228">GPIO8  SDA</text><text x="352" y="252">GPIO9  SCL</text>
+    <text x="352" y="296">GPIO4  ENC A</text><text x="352" y="320">GPIO5  ENC B</text>
+    <text x="352" y="364">GPIO6  MOT IN1</text><text x="352" y="388">GPIO7  MOT IN2</text>
+    <text x="352" y="424">GPIO15 LED данные</text>
+  </g>
+  <text x="580" y="290" text-anchor="end" class="s">3V3, GND</text>
+
+  <!-- I2C -->
+  <path class="l" d="M590 224 H680" marker-end="url(#a)"/>
+  <path class="l" d="M590 248 H680" marker-end="url(#a)"/>
+  <text x="600" y="218" class="s">SDA</text><text x="600" y="266" class="s">SCL (подтяжки 4,7 кОм к 3V3)</text>
+
+  <!-- MCP -->
+  <rect class="b" x="680" y="150" width="280" height="200"/>
+  <text x="820" y="172" text-anchor="middle" class="t" font-weight="700">4 × MCP23017 (I²C)</text>
+  <rect class="g" x="696" y="184" width="248" height="34"/><text x="706" y="206" class="t">0x20  кнопки этажей 1–16</text>
+  <rect class="g" x="696" y="224" width="248" height="34"/><text x="706" y="246" class="t">0x21  кнопки этажей 17–25</text>
+  <rect class="p" x="696" y="264" width="248" height="34"/><text x="706" y="286" class="t">0x22  датчики Холла 1–16</text>
+  <rect class="p" x="696" y="304" width="248" height="34"/><text x="706" y="326" class="t">0x23  датчики Холла 17–25</text>
+  <path class="k" d="M820 350 V380"/>
+  <text x="826" y="372" class="s">шлейфы IDC-10 вдоль шахты</text>
+  <rect class="g" x="680" y="380" width="280" height="60"/>
+  <text x="820" y="404" text-anchor="middle" class="t" font-weight="700">На каждом этаже</text>
+  <text x="820" y="424" text-anchor="middle" class="s">кнопка · датчик Холла · светодиод WS2812</text>
+
+  <!-- светодиодная цепь -->
+  <path class="l" d="M590 424 H620 V470 H640"/>
+  <rect class="b" x="640" y="450" width="140" height="44"/>
+  <text x="710" y="470" text-anchor="middle" class="t">74AHCT125</text>
+  <text x="710" y="486" text-anchor="middle" class="s">3,3 В → 5 В</text>
+  <path class="l" d="M780 472 H860 V440" marker-end="url(#a)"/>
+  <text x="790" y="504" class="s">1 провод данных, лента идёт этаж за этажом</text>
+
+  <!-- мотор -->
+  <path class="l" d="M590 364 H640 V556 H660"/>
+  <path class="l" d="M590 388 H630 V576 H660"/>
+  <rect class="b" x="660" y="536" width="150" height="56"/>
+  <text x="735" y="560" text-anchor="middle" class="t" font-weight="700">DRV8833</text>
+  <text x="735" y="578" text-anchor="middle" class="s">драйвер мотора</text>
+  <path class="l" d="M810 564 H850"/>
+  <rect class="p" x="850" y="520" width="110" height="88"/>
+  <text x="905" y="548" text-anchor="middle" class="t" font-weight="700">N20</text>
+  <text x="905" y="566" text-anchor="middle" class="s">мотор с</text>
+  <text x="905" y="582" text-anchor="middle" class="s">редуктором</text>
+  <text x="905" y="598" text-anchor="middle" class="s">+ энкодер</text>
+  <path class="l" d="M905 520 V510 H350 V440" stroke-dasharray="6 4"/>
+  <text x="360" y="528" class="s">пунктир: сигналы энкодера A, B → GPIO4, GPIO5 (питание энкодера 3V3)</text>
+  <text x="20" y="632" class="s">Красное: питание 5 В. Все земли (GND) соединить в одной точке.</text>
+</svg>

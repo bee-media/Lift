@@ -1,0 +1,893 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Лифт</title>
+<style>:root {
+  --bg: #f4f6fb; --card: #ffffff; --ink: #1c2333; --muted: #5d6783; --line: #dfe4f0;
+  --accent: #2f6bff; --accent-ink: #ffffff; --call: #ffb020; --here: #22b36b; --bad: #e5484d;
+  --shaft: #e9edf7; --cab: #2f6bff; --radius: 16px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #11151f; --card: #1a2030; --ink: #eef1f8; --muted: #9aa5c0; --line: #2a3250; --shaft: #222a40; --cab: #5b8dff; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+body { padding: 0 16px 40px; max-width: 1100px; margin: 0 auto; }
+header { display: flex; align-items: center; gap: 12px; padding: 14px 0 6px; flex-wrap: wrap; }
+h1 { font-size: 26px; margin: 0; }
+.badge { font-size: 13px; padding: 3px 10px; border-radius: 999px; background: var(--shaft); color: var(--muted); }
+.badge.ok { background: color-mix(in srgb, var(--here) 20%, transparent); color: var(--here); }
+.badge.bad { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--bad); }
+nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; margin: 8px 0 14px; }
+nav button { min-height: 48px; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 12px; font: inherit; font-weight: 600; padding: 0 16px; cursor: pointer; }
+nav button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+.card h2 { font-size: 17px; margin: 0 0 10px; }
+.status { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+.why { color: var(--muted); margin: 0; }
+.play { display: grid; gap: 14px; grid-template-columns: 1fr; }
+@media (min-width: 760px) { .play { grid-template-columns: 340px 1fr; } }
+.shaftwrap { max-height: 70vh; overflow: auto; border-radius: var(--radius); border: 1px solid var(--line); background: var(--card); }
+.shaft { position: relative; margin: 8px; }
+.floor { position: absolute; left: 0; right: 0; height: 64px; border-top: 2px dashed var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 8px; }
+.floor .num { font-weight: 700; color: var(--muted); width: 36px; }
+.floor .hall { width: 10px; height: 10px; border-radius: 50%; background: var(--line); margin-right: auto; }
+.floor .hall.on { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
+.floor .park { font-size: 12px; color: var(--muted); margin-left: 6px; }
+.callbtn { width: 54px; height: 54px; border-radius: 50%; border: 3px solid var(--line); background: var(--card); color: var(--ink); font: inherit; font-weight: 800; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; position: relative; z-index: 3; }
+.callbtn.call { background: var(--call); border-color: var(--call); color: #3a2600; }
+.callbtn.here { border-color: var(--here); color: var(--here); }
+.cab { position: absolute; left: 62px; width: 90px; height: 54px; background: var(--cab); border-radius: 8px; box-shadow: 0 3px 10px rgba(0,0,0,.25); z-index: 2; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 22px; }
+.cab .magnet { position: absolute; right: -4px; top: 38px; width: 8px; height: 8px; background: #333; border-radius: 2px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; font-weight: 600; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { min-width: 36px; padding: 4px 10px; border-radius: 999px; background: var(--shaft); font-weight: 700; text-align: center; }
+.chip.on { background: var(--call); color: #3a2600; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+button.btn { min-height: 48px; padding: 0 18px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+button.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.btn.danger { background: var(--bad); color: #fff; border-color: var(--bad); }
+button.btn:disabled { opacity: .5; cursor: default; }
+.field { display: grid; grid-template-columns: 1fr minmax(120px, 190px); gap: 6px 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.field:last-child { border-bottom: 0; }
+.field label { font-weight: 600; } .field small { display: block; color: var(--muted); font-weight: 400; }
+.field input[type=number], .field input[type=text], .field input[type=password], .field select { width: 100%; min-height: 44px; font: inherit; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.field input[type=range] { width: 100%; }
+.field input[type=checkbox] { width: 28px; height: 28px; justify-self: end; }
+.val { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 14px; text-align: right; }
+.progress { height: 14px; background: var(--shaft); border-radius: 999px; overflow: hidden; }
+.progress > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: left; }
+.log { font: 13px/1.5 ui-monospace, Consolas, monospace; max-height: 320px; overflow: auto; }
+.toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 999px; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 10; }
+.toast.show { opacity: 1; }
+.fault { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--card)); }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛗 Лифт</h1>
+  <span id="conn" class="badge">подключаюсь…</span>
+</header>
+<nav id="tabs" role="tablist">
+  <button role="tab" data-tab="play" aria-selected="true">Играть</button>
+  <button role="tab" data-tab="settings" aria-selected="false">Настройки</button>
+  <button role="tab" data-tab="calib" aria-selected="false">Калибровка</button>
+  <button role="tab" data-tab="service" aria-selected="false">Сервис</button>
+</nav>
+
+<main>
+<section id="tab-play">
+  <div id="faultcard" class="card fault hidden">
+    <p class="status" id="faulttext"></p>
+    <p class="why">Лифт остановился, чтобы ничего не сломать.</p>
+    <div class="row"><button class="btn primary" id="btn-clear">Попробовать снова</button></div>
+  </div>
+  <div class="play">
+    <div class="shaftwrap" id="shaftwrap"><div class="shaft" id="shaft"></div></div>
+    <div>
+      <div class="card">
+        <p class="status" id="status">…</p>
+        <p class="why" id="why"></p>
+      </div>
+      <div class="card">
+        <h2>Что происходит внутри</h2>
+        <dl class="kv">
+          <dt>Сейчас на</dt><dd id="k-floor">–</dd>
+          <dt>Куда едет</dt><dd id="k-target">–</dd>
+          <dt>Скорость</dt><dd id="k-speed">–</dd>
+          <dt>Высота</dt><dd id="k-pos">–</dd>
+          <dt>Счётчик мотора</dt><dd id="k-counts">–</dd>
+          <dt>Мощность мотора</dt><dd id="k-pwm">–</dd>
+          <dt>Правило</dt><dd id="k-mode">–</dd>
+        </dl>
+        <h2 style="margin-top:14px">Кто нажал кнопку (очередь)</h2>
+        <div class="chips" id="queue"></div>
+        <p class="why" style="margin-top:12px">Красная точка слева от этажа: датчик Холла почувствовал магнит кабины.</p>
+      </div>
+      <div class="card">
+        <h2>Быстрые кнопки</h2>
+        <div class="row">
+          <button class="btn" id="btn-demo">Показать самому</button>
+          <button class="btn" id="btn-slow">Замедлить</button>
+        </div>
+        <p class="why">Задержите палец на кнопке этажа на несколько секунд: этот этаж станет домом, и лифт вернётся туда, если долго стоит.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="tab-settings" class="hidden"><div id="settingsForm"></div></section>
+
+<section id="tab-calib" class="hidden">
+  <div class="card">
+    <h2>Мастер калибровки</h2>
+    <ol>
+      <li>Поставьте кабину между этажами или внизу и нажмите «Найти 1-й этаж».</li>
+      <li>Нажмите «Калибровать»: лифт сам поднимется до верха и запомнит, где стоит каждый датчик.</li>
+      <li>Если какой-то датчик не загорелся, проверьте магнит и провод этого этажа.</li>
+    </ol>
+    <div class="row">
+      <button class="btn primary" id="c-home">Найти 1-й этаж</button>
+      <button class="btn primary" id="c-cal">Калибровать</button>
+      <button class="btn danger" id="c-stop">Стоп</button>
+    </div>
+    <div class="progress"><div id="c-prog"></div></div>
+  </div>
+  <div class="card"><h2>Датчики Холла</h2><table id="c-table"></table></div>
+</section>
+
+<section id="tab-service" class="hidden">
+  <div class="card"><h2>Журнал</h2><div class="log" id="logbox"></div></div>
+  <div class="card" id="otacard">
+    <h2>Обновление прошивки по воздуху</h2>
+    <p class="why" id="otahint">Выберите файл .bin, собранный в Arduino IDE (Скетч → Экспорт скомпилированного бинарного файла).</p>
+    <form id="otaform"><div class="row"><input type="file" id="otafile" accept=".bin"><button class="btn primary" type="submit">Обновить</button></div></form>
+    <div class="progress"><div id="ota-prog"></div></div>
+  </div>
+  <div class="card">
+    <h2>Сброс</h2>
+    <div class="row">
+      <button class="btn danger" id="btn-reset">Вернуть заводские настройки</button>
+      <button class="btn" id="btn-reboot">Перезагрузить лифт</button>
+    </div>
+  </div>
+</section>
+</main>
+<div class="toast" id="toast"></div>
+<script>// Диспетчер лифта. Чистая логика без железа.
+// Те же правила реализованы в firmware/lift/dispatcher.h, любое изменение делается в обоих местах.
+//
+// plan(s) -> {target, dir}
+//   s.mode      'down' | 'fifo' | 'both'
+//   s.calls     [{f, t, prio}]  f = индекс этажа с 0, t = порядок поступления
+//   s.pos       положение кабины в этажах (дробное)
+//   s.dir       текущее направление движения (-1, 0, +1)
+//   s.moving    едет ли кабина
+//   s.brake     путь торможения в этажах (после него остановиться уже можно)
+//   s.target    текущая цель (-1 если нет), сохраняется, если лучше выбрать нельзя
+//   s.priorityOn
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.Dispatcher = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  const EPS = 1e-6;
+
+  function plan(s) {
+    const calls = s.calls || [];
+    const keep = { target: s.moving && s.target >= 0 ? s.target : -1, dir: s.dir || 0 };
+    if (!calls.length) return { target: -1, dir: 0 };
+
+    // Впереди по ходу движения и дальше пути торможения.
+    // Текущая цель всегда остаётся возможной: до неё уже тормозим.
+    const reachable = (f) => {
+      if (!s.moving || !s.dir) return true;
+      if (f === s.target) return true;
+      return s.dir * (f - s.pos) >= s.brake - EPS;
+    };
+    const cand = calls.filter((c) => reachable(c.f));
+    if (!cand.length) return keep;
+
+    const byAge = (a, b) => a.t - b.t;
+    const near = (a, b) => Math.abs(a.f - s.pos) - Math.abs(b.f - s.pos) || a.t - b.t;
+    const sign = (f) => (f > s.pos + EPS ? 1 : f < s.pos - EPS ? -1 : 0);
+    const go = (f, dir) => ({ target: f, dir: dir !== undefined ? dir : sign(f) });
+
+    // Приоритет: ближайший приоритетный вызов, остальные ждут.
+    if (s.priorityOn) {
+      const pr = cand.filter((c) => c.prio).sort(near);
+      if (pr.length) return go(pr[0].f);
+    }
+
+    // Вызов на этаже, где кабина стоит, обслуживается сразу.
+    if (!s.moving) {
+      const here = cand.find((c) => Math.abs(c.f - s.pos) < 0.05);
+      if (here) return { target: here.f, dir: s.dir || 0 };
+    }
+
+    if (s.mode === 'fifo') {
+      return go(cand.slice().sort(byAge)[0].f);
+    }
+
+    let dir = s.moving ? s.dir : 0;
+    if (!dir) dir = sign(cand.slice().sort(byAge)[0].f) || -1;
+
+    if (s.mode === 'both') {
+      const ahead = cand.filter((c) => dir * (c.f - s.pos) > EPS).sort(near);
+      if (ahead.length) return go(ahead[0].f, dir);
+      const back = cand.filter((c) => -dir * (c.f - s.pos) > EPS).sort(near);
+      if (back.length) return go(back[0].f, -dir);
+      return keep;
+    }
+
+    // 'down': вверх без остановок до самого верхнего вызова, вниз останавливаемся везде.
+    const above = cand.filter((c) => c.f > s.pos + EPS);
+    const below = cand.filter((c) => c.f < s.pos - EPS);
+    const top = (arr) => arr.reduce((m, c) => (c.f > m ? c.f : m), -1);
+    if (dir > 0) {
+      if (above.length) return go(top(above), 1);
+      if (below.length) return go(below.sort((a, b) => b.f - a.f)[0].f, -1);
+    } else {
+      if (below.length) return go(below.sort((a, b) => b.f - a.f)[0].f, -1);
+      if (above.length) return go(top(above), 1);
+    }
+    return keep;
+  }
+
+  return { plan };
+});
+</script>
+<script>// Симулятор лифта в браузере. Нужен, чтобы пользоваться панелью без железа.
+// Отдаёт тот же формат состояния, что и прошивка (см. firmware/lift/lift.ino, /api/state).
+(function (root) {
+  const D = root.Dispatcher;
+
+  const DEFAULTS = {
+    floors: 5, mode: 'down',
+    vmax: 120, accel: 300, creep: 25, dwell: 3,
+    parkEnabled: false, parkFloor: 1, parkIdle: 60, longPress: 5,
+    priorityOn: false, prioMask: '',
+    brightness: 40, night: false, demo: false, slowmo: false, faultHall: -1,
+    pitch: 100, hallZone: 12, cpm: 23.0,
+    invMotor: false, invEnc: false, invHall: false, kp: 1.2, ki: 0.8,
+    hostname: 'lift', ssid: '', pass: '',
+  };
+
+  class SimLift {
+    constructor() {
+      this.sim = true;
+      this.cfg = Object.assign({}, DEFAULTS);
+      this.calls = [];
+      this.seq = 0;
+      this.pos = 100 * (0.4 + Math.random() * 1.6);
+      this.vel = 0;
+      this.state = 'homing';
+      this.dir = 0;
+      this.target = -1;
+      this.cur = 0;
+      this.timer = 0;
+      this.idleFor = 0;
+      this.demoIn = 4;
+      this.fault = '';
+      this.parking = false;
+      this.cal = { done: false, centers: [], progress: 0, phase: '' };
+      this.logs = [];
+      this.t0 = performance.now();
+      this.last = this.t0;
+      this.say('Включился. Ищу первый этаж.');
+      this._loop = setInterval(() => this.step(), 30);
+    }
+
+    say(text) {
+      this.logs.unshift({ t: Math.round((performance.now() - this.t0) / 1000), text });
+      if (this.logs.length > 80) this.logs.pop();
+    }
+
+    scale() { return (this.cfg.slowmo ? 0.3 : 1) * (this.cfg.night ? 0.6 : 1); }
+    hallAt(k) {
+      if (k === this.cfg.faultHall) return 0;
+      return Math.abs(this.pos - k * this.cfg.pitch) <= this.cfg.hallZone / 2 ? 1 : 0;
+    }
+
+    isPrio(f) { return this.cfg.prioMask[f] === '1'; }
+
+    call(f) {
+      if (f < 0 || f >= this.cfg.floors || this.state === 'fault') return false;
+      if (this.calls.some((c) => c.f === f)) return true;
+      this.calls.push({ f, t: this.seq++, prio: this.isPrio(f) });
+      this.say(`Вызов с ${f + 1} этажа`);
+      return true;
+    }
+    cancel(f) { this.calls = this.calls.filter((c) => c.f !== f); }
+
+    setConfig(p) {
+      const old = this.cfg.floors;
+      Object.assign(this.cfg, p);
+      this.cfg.floors = Math.max(2, Math.min(25, this.cfg.floors | 0));
+      this.cfg.parkFloor = Math.max(1, Math.min(this.cfg.floors, this.cfg.parkFloor | 0));
+      this.calls = this.calls.filter((c) => c.f < this.cfg.floors);
+      if (this.cfg.floors !== old && this.target >= this.cfg.floors) this.target = -1;
+    }
+
+    command(name, arg) {
+      switch (name) {
+        case 'home': this.fault = ''; this.state = 'homing'; this.calls = []; this.target = -1; this.say('Ищу первый этаж.'); break;
+        case 'stop': this.vel = 0; this.state = 'fault'; this.fault = 'Нажат аварийный стоп'; this.say('Аварийный стоп'); break;
+        case 'clear': if (this.state === 'fault') { this.fault = ''; this.state = 'homing'; this.say('Ошибка сброшена, ищу первый этаж.'); } break;
+        case 'calibrate':
+          if (this.state === 'idle') { this.state = 'calibrating'; this.cal = { done: false, centers: [], progress: 0, phase: 'up' }; this.say('Калибровка: еду вверх.'); }
+          break;
+        case 'park': this.cfg.parkFloor = (arg | 0) + 1; this.cfg.parkEnabled = true; this.say(`Парковка: ${arg + 1} этаж`); break;
+        case 'reset': Object.assign(this.cfg, DEFAULTS); this.say('Настройки сброшены'); break;
+      }
+    }
+
+    step() {
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - this.last) / 1000);
+      this.last = now;
+      this.update(dt);
+    }
+
+    update(dt) {
+      const c = this.cfg, pitch = c.pitch, k = this.scale();
+      const vmax = c.vmax * k, a = c.accel * k, creep = Math.min(c.creep, vmax);
+      const topMM = (c.floors - 1) * pitch;
+
+      // Проверка датчика: если Холл сломан, лифт замечает это, проезжая этаж.
+      if ((this.state === 'moving' || this.state === 'calibrating') && c.faultHall >= 0 && c.faultHall < c.floors &&
+          Math.abs(this.pos - c.faultHall * pitch) < 1.5) {
+        this.vel = 0; this.state = 'fault';
+        this.fault = `Не вижу датчик на ${c.faultHall + 1} этаже`;
+        this.say(this.fault);
+        return;
+      }
+
+      if (this.state === 'homing') {
+        this.vel = -creep;
+        this.pos += this.vel * dt;
+        if (this.pos <= 0) { this.pos = 0; this.vel = 0; this.cur = 0; this.dir = 0; this.state = 'idle'; this.say('Нашёл первый этаж. Готов.'); }
+        if (this.pos > topMM + 10) this.pos = topMM + 10;
+      } else if (this.state === 'calibrating') {
+        const up = this.cal.phase === 'up';
+        this.vel = (up ? 1 : -1) * Math.max(creep, 30 * k);
+        this.pos += this.vel * dt;
+        this.cal.progress = Math.max(0, Math.min(1, this.pos / topMM));
+        const idx = Math.round(this.pos / pitch);
+        if (up && Math.abs(this.pos - idx * pitch) < 1 && this.cal.centers[idx] === undefined) {
+          this.cal.centers[idx] = +(idx * pitch + (Math.random() - 0.5) * 0.8).toFixed(1);
+        }
+        if (up && this.pos >= topMM) { this.pos = topMM; this.cal.phase = 'down'; }
+        if (!up && this.pos <= 0) {
+          this.pos = 0; this.vel = 0; this.cur = 0; this.state = 'idle';
+          this.cal.done = true; this.say('Калибровка закончена.');
+        }
+      } else if (this.state === 'moving') {
+        this.drive(dt, vmax, a, creep);
+      } else if (this.state === 'dwell') {
+        this.timer -= dt;
+        if (this.timer <= 0) this.state = 'idle';
+      } else if (this.state === 'idle') {
+        this.idleFor += dt;
+        this.think();
+        this.demoTick(dt);
+      }
+    }
+
+    think() {
+      const c = this.cfg, pitch = c.pitch;
+      const r = D.plan({ mode: c.mode, calls: this.calls, pos: this.pos / pitch, dir: this.dir, moving: false, brake: 0, target: -1, priorityOn: c.priorityOn });
+      if (r.target >= 0) {
+        this.idleFor = 0; this.parking = false;
+        if (Math.abs(r.target * pitch - this.pos) < 0.5) { this.arrive(r.target); return; }
+        this.target = r.target; this.dir = r.dir; this.state = 'moving';
+        this.say(`Еду ${this.dir > 0 ? 'вверх' : 'вниз'} на ${this.target + 1} этаж`);
+        return;
+      }
+      if (c.parkEnabled && this.idleFor > c.parkIdle && this.cur !== c.parkFloor - 1) {
+        this.parking = true; this.target = c.parkFloor - 1;
+        this.dir = this.target * pitch > this.pos ? 1 : -1; this.state = 'moving'; this.idleFor = 0;
+        this.say(`Долго стоял, еду на парковку: ${this.target + 1} этаж`);
+      }
+    }
+
+    demoTick(dt) {
+      if (!this.cfg.demo) return;
+      this.demoIn -= dt;
+      if (this.demoIn <= 0) {
+        this.demoIn = 2 + Math.random() * 5;
+        this.call(Math.floor(Math.random() * this.cfg.floors));
+      }
+    }
+
+    drive(dt, vmax, a, creep) {
+      const pitch = this.cfg.pitch;
+      const dirNow = this.vel > 0.1 ? 1 : this.vel < -0.1 ? -1 : this.dir;
+      const brake = (this.vel * this.vel) / (2 * a) / pitch + 0.02;
+      if (!this.parking) {
+        const r = D.plan({ mode: this.cfg.mode, calls: this.calls, pos: this.pos / pitch, dir: dirNow, moving: true, brake, target: this.target, priorityOn: this.cfg.priorityOn });
+        if (r.target >= 0 && r.target !== this.target) { this.target = r.target; this.say(`Теперь еду на ${this.target + 1} этаж`); }
+        if (r.dir) this.dir = r.dir;
+      } else if (this.calls.length) {
+        this.parking = false;
+      }
+      const dist = this.target * pitch - this.pos;
+      const sgn = Math.sign(dist) || 1;
+      const ad = Math.abs(dist);
+      const want = Math.max(Math.min(vmax, Math.sqrt(2 * a * ad)), Math.min(creep, ad * 3));
+      const dv = sgn * want - this.vel;
+      this.vel += Math.max(-a * dt, Math.min(a * dt, dv));
+      this.pos += this.vel * dt;
+      if (Math.sign(this.target * pitch - this.pos) !== sgn || Math.abs(this.target * pitch - this.pos) < 0.3) {
+        this.pos = this.target * pitch;
+        this.vel = 0;
+        this.arrive(this.target);
+      }
+    }
+
+    arrive(f) {
+      this.cur = f; this.vel = 0; this.target = -1; this.parking = false;
+      this.calls = this.calls.filter((c) => c.f !== f);
+      this.state = 'dwell'; this.timer = this.cfg.dwell; this.idleFor = 0;
+      // Если дальше вызовов нет, лифт запоминает последнее направление.
+      this.say(`Приехал на ${f + 1} этаж`);
+    }
+
+    snapshot() {
+      const c = this.cfg;
+      const hall = [];
+      for (let i = 0; i < c.floors; i++) hall.push(this.hallAt(i));
+      const here = this.state === 'idle' || this.state === 'dwell' ? this.cur : -1;
+      const led = [];
+      for (let i = 0; i < c.floors; i++) {
+        led.push(this.calls.some((x) => x.f === i) ? 'call' : i === here ? 'here' : 'off');
+      }
+      const floorF = this.pos / c.pitch;
+      return {
+        sim: true, floors: c.floors, pos: +this.pos.toFixed(1), vel: +this.vel.toFixed(1),
+        floor: Math.max(0, Math.min(c.floors - 1, Math.round(floorF))),
+        state: this.state, dir: this.dir, target: this.target,
+        calls: this.calls.slice().sort((x, y) => x.t - y.t).map((x) => x.f),
+        hall, led, fault: this.fault, parking: this.parking,
+        counts: Math.round(this.pos * c.cpm), pwm: Math.round(Math.min(100, Math.abs(this.vel) / Math.max(1, c.vmax) * 80)),
+        cal: this.cal, mode: c.mode, uptime: Math.round((performance.now() - this.t0) / 1000),
+        parkFloor: c.parkEnabled ? c.parkFloor - 1 : -1,
+      };
+    }
+  }
+
+  root.SimLift = SimLift;
+  root.LIFT_DEFAULTS = DEFAULTS;
+})(typeof self !== 'undefined' ? self : this);
+</script>
+<script>(function () {
+  const $ = (s) => document.querySelector(s);
+  const FH = 64; // высота этажа на экране, px
+
+  // ---------- Связь с лифтом или симулятором ----------
+  const Http = {
+    sim: false,
+    async state() { return (await fetch('/api/state', { cache: 'no-store' })).json(); },
+    async config() { return (await fetch('/api/config', { cache: 'no-store' })).json(); },
+    async setConfig(p) { await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }); },
+    async call(f) { await fetch('/api/call?f=' + f, { method: 'POST' }); },
+    async cmd(n, a) { await fetch('/api/cmd?name=' + n + '&arg=' + (a || 0), { method: 'POST' }); },
+    async log() { return (await fetch('/api/log', { cache: 'no-store' })).json(); },
+  };
+  let Sim = null;
+  const SimApi = {
+    sim: true,
+    async state() { return Sim.snapshot(); },
+    async config() { return Object.assign({}, Sim.cfg); },
+    async setConfig(p) { Sim.setConfig(p); },
+    async call(f) { Sim.call(f); },
+    async cmd(n, a) { Sim.command(n, a); },
+    async log() { return Sim.logs; },
+  };
+  let api = Http;
+  let cfg = {};
+  let st = null;
+  let drawnFloors = 0;
+
+  async function connect() {
+    const forceSim = location.protocol === 'file:' || /[?&]sim\b/.test(location.search);
+    if (!forceSim) {
+      try {
+        const ctl = new AbortController();
+        const to = setTimeout(() => ctl.abort(), 2000);
+        const r = await fetch('/api/state', { signal: ctl.signal, cache: 'no-store' });
+        clearTimeout(to);
+        if (r.ok) { api = Http; return; }
+      } catch (e) { /* лифта нет, идём в симулятор */ }
+    }
+    Sim = new window.SimLift();
+    api = SimApi;
+  }
+
+  // ---------- Тексты ----------
+  const MODES = {
+    down: ['Попутный вниз', 'Вверх еду без остановок до самого верхнего вызова, а вниз останавливаюсь у каждого, кто нажал.'],
+    fifo: ['По очереди', 'Еду к тем, кто нажал раньше, в порядке нажатий.'],
+    both: ['Попутный в обе стороны', 'Забираю всех, кто по пути, и вверх, и вниз.'],
+  };
+  const N = (f) => (f + 1);
+
+  function sentence(s) {
+    switch (s.state) {
+      case 'homing': return ['Ищу первый этаж…', 'Еду вниз потихоньку, пока датчик Холла не почувствует магнит кабины.'];
+      case 'calibrating': return ['Учусь: запоминаю, где каждый этаж', 'Еду вверх и записываю, где сработал каждый датчик.'];
+      case 'fault': return ['Что-то не так', s.fault || ''];
+      case 'dwell': return [`Приехал на ${N(s.floor)} этаж`, 'Жду, пока выйдут и зайдут.'];
+      case 'moving': {
+        const up = s.vel >= 0 && s.dir >= 0;
+        const why = s.mode === 'down'
+          ? (up ? 'Вверх я без остановок: сначала доеду до самого верхнего вызова. Потом поеду вниз и заберу всех по пути.' : 'Вниз я останавливаюсь у каждого, кто нажал кнопку по пути.')
+          : MODES[s.mode][1];
+        return [`Еду ${up ? 'вверх' : 'вниз'} на ${N(s.target)} этаж`, why];
+      }
+      default: return [`Стою на ${N(s.floor)} этаже`, s.calls.length ? 'Думаю, куда ехать.' : 'Жду, пока кто-нибудь нажмёт кнопку.'];
+    }
+  }
+
+  // ---------- Шахта ----------
+  let shaftEls = [];
+  function buildShaft(n) {
+    const sh = $('#shaft');
+    sh.innerHTML = '';
+    sh.style.height = n * FH + 'px';
+    shaftEls = [];
+    for (let i = n - 1; i >= 0; i--) {
+      const row = document.createElement('div');
+      row.className = 'floor';
+      row.style.top = (n - 1 - i) * FH + 'px';
+      row.innerHTML = `<span class="num">${N(i)}</span><span class="hall"></span><span class="park"></span>`;
+      const b = document.createElement('button');
+      b.className = 'callbtn';
+      b.textContent = N(i);
+      b.setAttribute('aria-label', `Вызвать лифт на ${N(i)} этаж`);
+      attachPress(b, i);
+      row.appendChild(b);
+      sh.appendChild(row);
+      shaftEls[i] = { hall: row.querySelector('.hall'), btn: b, park: row.querySelector('.park') };
+    }
+    const cab = document.createElement('div');
+    cab.className = 'cab'; cab.id = 'cab';
+    cab.innerHTML = '<span id="cabnum">1</span><span class="magnet"></span>';
+    sh.appendChild(cab);
+    drawnFloors = n;
+  }
+
+  function attachPress(btn, f) {
+    let timer = 0, fired = false;
+    const clear = () => { clearTimeout(timer); timer = 0; };
+    btn.addEventListener('pointerdown', () => {
+      fired = false; clear();
+      timer = setTimeout(async () => {
+        fired = true; await api.cmd('park', f); toast(`Дом лифта: ${N(f)} этаж`); refreshCfg();
+      }, (cfg.longPress || 5) * 1000);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((e) => btn.addEventListener(e, clear));
+    btn.addEventListener('click', () => { if (!fired) api.call(f); });
+    btn.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  function renderState(s) {
+    if (s.floors !== drawnFloors) buildShaft(s.floors);
+    const pitch = cfg.pitch || 100;
+    const fl = s.pos / pitch;
+    const cab = $('#cab');
+    cab.style.top = ((s.floors - 1 - fl) * FH + 8) + 'px';
+    $('#cabnum').textContent = N(s.floor);
+    for (let i = 0; i < s.floors; i++) {
+      const e = shaftEls[i];
+      e.hall.classList.toggle('on', !!s.hall[i]);
+      e.btn.classList.toggle('call', s.led[i] === 'call');
+      e.btn.classList.toggle('here', s.led[i] === 'here');
+      e.park.textContent = s.parkFloor === i ? '🏠' : '';
+    }
+    // Шахта следует за кабиной
+    const wrap = $('#shaftwrap');
+    if (wrap.scrollHeight > wrap.clientHeight) {
+      const want = (s.floors - 1 - fl) * FH - wrap.clientHeight / 2 + 40;
+      if (s.state !== 'idle' || Math.abs(wrap.scrollTop - want) > wrap.clientHeight) wrap.scrollTop += (want - wrap.scrollTop) * 0.2;
+    }
+    const [t, w] = sentence(s);
+    $('#status').textContent = t;
+    $('#why').textContent = w;
+    $('#k-floor').textContent = N(s.floor) + ' этаж';
+    $('#k-target').textContent = s.target >= 0 ? N(s.target) + ' этаж' : '–';
+    $('#k-speed').textContent = Math.abs(s.vel).toFixed(0) + ' мм/с';
+    $('#k-pos').textContent = (s.pos / 10).toFixed(1) + ' см';
+    $('#k-counts').textContent = s.counts + ' импульсов';
+    $('#k-pwm').textContent = s.pwm + ' %';
+    $('#k-mode').textContent = (MODES[s.mode] || ['?'])[0];
+    $('#queue').innerHTML = s.calls.length ? s.calls.map((f) => `<span class="chip on">${N(f)}</span>`).join('') : '<span class="why">никто не ждёт</span>';
+    const fault = s.state === 'fault';
+    $('#faultcard').classList.toggle('hidden', !fault);
+    $('#faulttext').textContent = s.fault || '';
+    $('#btn-demo').textContent = cfg.demo ? 'Выключить показ' : 'Показать самому';
+    $('#btn-slow').textContent = cfg.slowmo ? 'Обычная скорость' : 'Замедлить';
+    const conn = $('#conn');
+    conn.textContent = s.sim ? 'симулятор (лифт не подключён)' : 'лифт на связи';
+    conn.className = 'badge ' + (s.sim ? '' : 'ok');
+    renderCalib(s);
+    const ns = $('#netstatus');
+    if (ns) {
+      ns.textContent = s.ip
+        ? `Подключён к «${s.ssidNow}». Адрес лифта в этой сети: http://${s.ip}`
+        : 'Домашняя сеть не подключена. Лифт всегда доступен через сеть LIFT-Setup (192.168.4.1).';
+    }
+  }
+
+  // ---------- Калибровка ----------
+  function renderCalib(s) {
+    if ($('#tab-calib').classList.contains('hidden')) return;
+    const prog = s.state === 'calibrating' ? (s.cal.progress || 0) : (s.cal && s.cal.done ? 1 : 0);
+    $('#c-prog').style.width = prog * 100 + '%';
+    let h = '<tr><th>Этаж</th><th>Датчик</th><th>Центр, мм</th></tr>';
+    for (let i = s.floors - 1; i >= 0; i--) {
+      const c = s.cal && s.cal.centers ? s.cal.centers[i] : undefined;
+      h += `<tr><td>${N(i)}</td><td>${s.hall[i] ? '🔴 магнит рядом' : '⚪ нет'}</td><td>${c !== undefined ? c : '–'}</td></tr>`;
+    }
+    $('#c-table').innerHTML = h;
+  }
+
+  // ---------- Настройки ----------
+  const SCHEMA = [
+    ['Лифт', [
+      { k: 'floors', l: 'Сколько этажей', t: 'num', min: 2, max: 25, step: 1 },
+      { k: 'mode', l: 'Как лифт выбирает, куда ехать', t: 'sel', opts: Object.entries(MODES).map(([v, a]) => [v, a[0]]) },
+      { k: 'dwell', l: 'Сколько стоять на этаже', t: 'range', min: 0.5, max: 20, step: 0.5, u: 'с' },
+      { k: 'night', l: 'Ночной режим', h: 'Тише и медленнее, подсветка слабее', t: 'chk' },
+    ]],
+    ['Скорость', [
+      { k: 'vmax', l: 'Максимальная скорость', t: 'range', min: 20, max: 300, step: 5, u: 'мм/с' },
+      { k: 'accel', l: 'Разгон и торможение', h: 'Чем меньше, тем плавнее', t: 'range', min: 50, max: 1000, step: 10, u: 'мм/с²' },
+      { k: 'creep', l: 'Скорость подхода к этажу', h: 'Последние миллиметры едем медленно', t: 'range', min: 5, max: 60, step: 1, u: 'мм/с' },
+    ]],
+    ['Дом лифта (парковка)', [
+      { k: 'parkEnabled', l: 'Возвращаться домой', t: 'chk' },
+      { k: 'parkFloor', l: 'Домашний этаж', t: 'num', min: 1, max: 25, step: 1 },
+      { k: 'parkIdle', l: 'Через сколько секунд простоя ехать домой', t: 'num', min: 5, max: 600, step: 5, u: 'с' },
+      { k: 'longPress', l: 'Сколько держать кнопку, чтобы задать дом', t: 'range', min: 1, max: 10, step: 0.5, u: 'с' },
+    ]],
+    ['Приоритет', [
+      { k: 'priorityOn', l: 'Включить приоритетные этажи', h: 'Их вызовы обслуживаются раньше всех', t: 'chk' },
+      { k: 'prioMask', l: 'Какие этажи приоритетные', t: 'prio' },
+    ]],
+    ['Подсветка', [
+      { k: 'brightness', l: 'Яркость светодиодов', t: 'range', min: 5, max: 100, step: 5, u: '%' },
+    ]],
+    ['Режимы для показа', [
+      { k: 'demo', l: 'Лифт сам вызывает себя', t: 'chk' },
+      { k: 'slowmo', l: 'Замедленный показ', t: 'chk' },
+      { k: 'faultHall', l: 'Сломать датчик на этаже (0 = не ломать)', h: 'Для урока: что делает лифт, если датчик не отвечает', t: 'num', min: 0, max: 25, step: 1, map: (v) => v + 1, unmap: (v) => v - 1 },
+    ]],
+    ['Железо (для взрослых)', [
+      { k: 'pitch', l: 'Расстояние между этажами', t: 'num', min: 50, max: 150, step: 0.5, u: 'мм' },
+      { k: 'hallZone', l: 'Ширина зоны датчика', t: 'num', min: 4, max: 40, step: 1, u: 'мм' },
+      { k: 'cpm', l: 'Импульсов энкодера на 1 мм', h: 'Измеряется калибровкой', t: 'num', min: 0.5, max: 50, step: 0.01 },
+      { k: 'invMotor', l: 'Развернуть мотор', t: 'chk' },
+      { k: 'invEnc', l: 'Развернуть энкодер', t: 'chk' },
+      { k: 'invHall', l: 'Инвертировать датчики Холла', t: 'chk' },
+      { k: 'kp', l: 'Регулятор скорости: P', t: 'num', min: 0, max: 20, step: 0.05 },
+      { k: 'ki', l: 'Регулятор скорости: I', t: 'num', min: 0, max: 20, step: 0.05 },
+    ]],
+    ['Сеть', [
+      { k: 'hostname', l: 'Имя в сети (имя.local)', t: 'txt', real: true },
+      { k: 'ssid', l: 'Wi-Fi: название сети', t: 'txt', real: true },
+      { k: 'pass', l: 'Wi-Fi: пароль', t: 'pwd', real: true, h: 'Пароль не показывается. Оставьте пустым, чтобы не менять' },
+    ]],
+  ];
+
+  let saveTimer = 0, pending = {};
+  function queueSave(k, v) {
+    pending[k] = v;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+      const p = pending; pending = {};
+      await api.setConfig(p);
+      toast('Сохранено');
+      if ('floors' in p || 'prioMask' in p) { await refreshCfg(); buildSettings(); }
+      else await refreshCfg();
+    }, 400);
+  }
+  async function refreshCfg() { cfg = await api.config(); }
+
+  function buildSettings() {
+    const root = $('#settingsForm');
+    root.innerHTML = '';
+    for (const [title, fields] of SCHEMA) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `<h2>${title}</h2>`;
+      for (const f of fields) {
+        if (f.real && api.sim) continue;
+        const raw = cfg[f.k];
+        const val = f.map ? f.map(raw) : raw;
+        const wrap = document.createElement('div');
+        wrap.className = 'field';
+        const lab = document.createElement('label');
+        lab.innerHTML = f.l + (f.h ? `<small>${f.h}</small>` : '');
+        wrap.appendChild(lab);
+        let ctl;
+        if (f.t === 'chk') {
+          ctl = document.createElement('input'); ctl.type = 'checkbox'; ctl.checked = !!val;
+          ctl.onchange = () => queueSave(f.k, ctl.checked);
+        } else if (f.t === 'sel') {
+          ctl = document.createElement('select');
+          f.opts.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; ctl.appendChild(o); });
+          ctl.value = val; ctl.onchange = () => queueSave(f.k, ctl.value);
+        } else if (f.t === 'range') {
+          ctl = document.createElement('div');
+          ctl.innerHTML = `<input type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${val}"><div class="val"></div>`;
+          const r = ctl.querySelector('input'), o = ctl.querySelector('.val');
+          const show = () => (o.textContent = r.value + ' ' + (f.u || ''));
+          show();
+          r.oninput = show; r.onchange = () => queueSave(f.k, +r.value);
+        } else if (f.t === 'num') {
+          ctl = document.createElement('input'); ctl.type = 'number'; ctl.min = f.min; ctl.max = f.max; ctl.step = f.step; ctl.value = val;
+          ctl.onchange = () => { const v = +ctl.value; queueSave(f.k, f.unmap ? f.unmap(v) : v); };
+        } else if (f.t === 'txt' || f.t === 'pwd') {
+          ctl = document.createElement('input'); ctl.type = f.t === 'pwd' ? 'password' : 'text'; ctl.value = val || '';
+          ctl.dataset.k = f.k;
+          // Эти поля сохраняются кнопкой ниже, а не сами по себе.
+          if (!f.real) ctl.onchange = () => queueSave(f.k, ctl.value);
+        } else if (f.t === 'prio') {
+          ctl = document.createElement('div'); ctl.className = 'chips'; ctl.style.gridColumn = '1 / -1';
+          const mask = (raw || '').padEnd(cfg.floors, '0').split('');
+          for (let i = 0; i < cfg.floors; i++) {
+            const c = document.createElement('button');
+            c.type = 'button'; c.className = 'chip' + (mask[i] === '1' ? ' on' : ''); c.textContent = N(i);
+            c.onclick = () => { mask[i] = mask[i] === '1' ? '0' : '1'; c.classList.toggle('on'); queueSave(f.k, mask.join('')); };
+            ctl.appendChild(c);
+          }
+          wrap.style.gridTemplateColumns = '1fr';
+        }
+        wrap.appendChild(ctl);
+        card.appendChild(wrap);
+      }
+      if (title === 'Сеть' && !api.sim) {
+        const info = document.createElement('p');
+        info.className = 'why'; info.id = 'netstatus';
+        card.appendChild(info);
+        const row = document.createElement('div');
+        row.className = 'row';
+        const b = document.createElement('button');
+        b.className = 'btn primary'; b.textContent = 'Сохранить и подключить';
+        b.onclick = async () => {
+          const get = (k) => card.querySelector(`[data-k="${k}"]`).value.trim();
+          const p = { hostname: get('hostname') || 'lift', ssid: get('ssid') };
+          const pw = card.querySelector('[data-k="pass"]').value;
+          if (pw) p.pass = pw;
+          if (!p.ssid) return toast('Введите название сети');
+          await api.setConfig(p);
+          await api.cmd('wifi');
+          toast('Подключаюсь к «' + p.ssid + '»…');
+        };
+        row.appendChild(b);
+        card.appendChild(row);
+
+        // Пароль собственной точки доступа LIFT-Setup
+        const h = document.createElement('h2');
+        h.style.marginTop = '18px'; h.textContent = 'Пароль точки LIFT-Setup';
+        card.appendChild(h);
+        const apInfo = document.createElement('p');
+        apInfo.className = 'why';
+        apInfo.textContent = cfg.apSecured
+          ? 'Сейчас точка защищена паролем. Новый пароль заменит старый.'
+          : 'Сейчас точка ОТКРЫТА: к ней может подключиться любой сосед. Задайте пароль.';
+        if (!cfg.apSecured) apInfo.style.color = 'var(--bad)';
+        card.appendChild(apInfo);
+        const apWrap = document.createElement('div');
+        apWrap.className = 'field';
+        apWrap.innerHTML = '<label>Новый пароль<small>От 8 до 63 символов</small></label>';
+        const apIn = document.createElement('input');
+        apIn.type = 'password'; apIn.autocomplete = 'new-password';
+        apWrap.appendChild(apIn);
+        card.appendChild(apWrap);
+        const apRow = document.createElement('div');
+        apRow.className = 'row';
+        const apBtn = document.createElement('button');
+        apBtn.className = 'btn primary'; apBtn.textContent = 'Сохранить пароль';
+        apBtn.onclick = async () => {
+          const pw = apIn.value;
+          if (pw.length < 8 || pw.length > 63) return toast('Пароль должен быть от 8 до 63 символов');
+          if (!confirm('Лифт перезапустит свою сеть. Телефон отключится: подключитесь к LIFT-Setup заново с новым паролем. Продолжить?')) return;
+          await api.setConfig({ apPass: pw });
+          apIn.value = '';
+          toast('Пароль сохранён. Подключитесь к LIFT-Setup заново');
+        };
+        apRow.appendChild(apBtn);
+        card.appendChild(apRow);
+      }
+      if (card.children.length > 1) root.appendChild(card);
+    }
+  }
+
+  // ---------- Сервис ----------
+  async function renderLog() {
+    if ($('#tab-service').classList.contains('hidden')) return;
+    const rows = await api.log();
+    $('#logbox').innerHTML = rows.map((r) => `<div>[${r.t} с] ${r.text}</div>`).join('');
+  }
+  function setupOta() {
+    if (api.sim) {
+      $('#otahint').textContent = 'Обновление работает, когда панель открыта с самого лифта. Сейчас показан симулятор.';
+      $('#otaform').querySelectorAll('input,button').forEach((e) => (e.disabled = true));
+      return;
+    }
+    $('#otaform').onsubmit = (e) => {
+      e.preventDefault();
+      const file = $('#otafile').files[0];
+      if (!file) return toast('Выберите файл .bin');
+      const x = new XMLHttpRequest();
+      x.open('POST', '/update');
+      x.upload.onprogress = (ev) => { if (ev.lengthComputable) $('#ota-prog').style.width = (ev.loaded / ev.total * 100) + '%'; };
+      x.onload = () => toast(x.status === 200 ? 'Готово, лифт перезагружается' : 'Ошибка обновления');
+      const fd = new FormData(); fd.append('firmware', file, file.name);
+      x.send(fd);
+    };
+  }
+
+  // ---------- Мелочи ----------
+  let toastTimer = 0;
+  function toast(t) {
+    const e = $('#toast'); e.textContent = t; e.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => e.classList.remove('show'), 1600);
+  }
+
+  function setupTabs() {
+    document.querySelectorAll('#tabs button').forEach((b) => {
+      b.onclick = () => {
+        document.querySelectorAll('#tabs button').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+        ['play', 'settings', 'calib', 'service'].forEach((n) => $('#tab-' + n).classList.toggle('hidden', n !== b.dataset.tab));
+        if (b.dataset.tab === 'settings') refreshCfg().then(buildSettings);
+        if (b.dataset.tab === 'service') renderLog();
+      };
+    });
+    $('#btn-clear').onclick = () => api.cmd('clear');
+    $('#btn-demo').onclick = async () => { await api.setConfig({ demo: !cfg.demo }); await refreshCfg(); };
+    $('#btn-slow').onclick = async () => { await api.setConfig({ slowmo: !cfg.slowmo }); await refreshCfg(); };
+    $('#c-home').onclick = () => api.cmd('home');
+    $('#c-cal').onclick = () => api.cmd('calibrate');
+    $('#c-stop').onclick = () => api.cmd('stop');
+    $('#btn-reboot').onclick = async () => {
+      if (api.sim) return toast('В симуляторе перезагружать нечего');
+      if (confirm('Перезагрузить лифт? Он снова будет искать первый этаж.')) { await api.cmd('reboot'); toast('Перезагружаюсь…'); }
+    };
+    $('#btn-reset').onclick = async () => {
+      if (confirm('Вернуть все настройки как на заводе?')) { await api.cmd('reset'); await refreshCfg(); buildSettings(); toast('Сброшено'); }
+    };
+  }
+
+  async function tick() {
+    try {
+      st = await api.state();
+      renderState(st);
+      document.body.dataset.online = '1';
+    } catch (e) {
+      const conn = $('#conn'); conn.textContent = 'нет связи с лифтом'; conn.className = 'badge bad';
+    }
+    setTimeout(tick, api.sim ? 80 : 200);
+  }
+
+  (async function init() {
+    setupTabs();
+    await connect();
+    await refreshCfg();
+    setupOta();
+    buildShaft(cfg.floors || 5);
+    tick();
+    setInterval(renderLog, 1500);
+    window.__lift = { get api() { return api; }, get sim() { return Sim; } };
+  })();
+})();
+</script>
+</body>
+</html>
