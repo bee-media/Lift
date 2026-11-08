@@ -11,6 +11,10 @@
     async call(f) { await fetch('/api/call?f=' + f, { method: 'POST' }); },
     async cmd(n, a) { await fetch('/api/cmd?name=' + n + '&arg=' + (a || 0), { method: 'POST' }); },
     async log() { return (await fetch('/api/log', { cache: 'no-store' })).json(); },
+    // Лифту нужны часы для ночного режима: отдаём ему время этого браузера и часовой пояс.
+    async syncTime() {
+      await fetch('/api/time?t=' + Math.floor(Date.now() / 1000) + '&tz=' + (-new Date().getTimezoneOffset()), { method: 'POST' });
+    },
   };
   let Sim = null;
   const SimApi = {
@@ -21,6 +25,8 @@
     async call(f) { Sim.call(f); },
     async cmd(n, a) { Sim.command(n, a); },
     async log() { return Sim.logs; },
+    async syncTime() {},
+    press(f, down) { Sim.press(f, down); },
   };
   let api = Http;
   let cfg = {};
@@ -99,12 +105,13 @@
     let timer = 0, fired = false;
     const clear = () => { clearTimeout(timer); timer = 0; };
     btn.addEventListener('pointerdown', () => {
+      if (api.press) api.press(f, true);
       fired = false; clear();
       timer = setTimeout(async () => {
         fired = true; await api.cmd('park', f); toast(`Дом лифта: ${N(f)} этаж`); refreshCfg();
       }, (cfg.longPress || 5) * 1000);
     });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach((e) => btn.addEventListener(e, clear));
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((e) => btn.addEventListener(e, () => { clear(); if (api.press) api.press(f, false); }));
     btn.addEventListener('click', () => { if (!fired) api.call(f); });
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
   }
@@ -112,7 +119,9 @@
   function renderState(s) {
     if (s.floors !== drawnFloors) buildShaft(s.floors);
     const pitch = cfg.pitch || 100;
-    const fl = s.pos / pitch;
+    // Ниже пола кабина опуститься не может: при поиске 1-го этажа расчётная высота может уйти в минус
+    // (датчик не видит магнит), а на деле кабина уже стоит на упорах.
+    const fl = Math.max(0, Math.min(s.floors - 1, s.pos / pitch));
     const cab = $('#cab');
     cab.style.top = ((s.floors - 1 - fl) * FH + 8) + 'px';
     $('#cabnum').textContent = N(s.floor);
@@ -121,6 +130,7 @@
       e.hall.classList.toggle('on', !!s.hall[i]);
       e.btn.classList.toggle('call', s.led[i] === 'call');
       e.btn.classList.toggle('here', s.led[i] === 'here');
+      e.btn.classList.toggle('test', s.led[i] === 'test');
       e.park.textContent = s.parkFloor === i ? '🏠' : '';
     }
     // Шахта следует за кабиной
@@ -150,6 +160,13 @@
     conn.textContent = s.sim ? 'симулятор (лифт не подключён)' : 'лифт на связи';
     conn.className = 'badge ' + (s.sim ? '' : 'ok');
     renderCalib(s);
+    renderIo(s);
+    const ci = $('#clockinfo');
+    if (ci) {
+      ci.textContent = s.clock >= 0
+        ? `Время на лифте: ${hhmm(s.clock)}.${s.nightNow ? ' Сейчас ночной режим: подсветка приглушена.' : ''}`
+        : 'Часы лифта ещё не заданы: откройте панель из браузера (время придёт само) или подключите домашний Wi-Fi. Пока расписание не работает.';
+    }
     const ns = $('#netstatus');
     if (ns) {
       ns.textContent = s.ip
@@ -171,13 +188,50 @@
     $('#c-table').innerHTML = h;
   }
 
+  // ---------- Проверка кнопок и светодиодов ----------
+  const hhmm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  let ioOn = false, ioTimer = 0, ioDrawn = 0, ioTiles = [];
+  function ioSet(on) {
+    ioOn = on;
+    clearInterval(ioTimer); ioTimer = 0;
+    api.cmd('iotest', on ? 1 : 0);
+    // Лифт сам выключит проверку через 90 с, поэтому пока вкладка открыта, подтверждаем каждые 30 с.
+    if (on) ioTimer = setInterval(() => api.cmd('iotest', 1), 30000);
+    $('#io-toggle').textContent = on ? 'Выключить проверку' : 'Включить проверку';
+    $('#io-toggle').classList.toggle('primary', !on);
+  }
+  function renderIo(s) {
+    if ($('#tab-calib').classList.contains('hidden')) { if (ioOn) ioSet(false); return; }
+    if (ioDrawn !== s.floors) {
+      const g = $('#io-grid');
+      g.innerHTML = '';
+      ioTiles = [];
+      for (let i = 0; i < s.floors; i++) {
+        const t = document.createElement('button');
+        t.type = 'button'; t.className = 'iotile';
+        t.innerHTML = `<b>${N(i)}</b><span class="d btn" title="кнопка"></span><span class="d hl" title="датчик Холла"></span>`;
+        t.setAttribute('aria-label', `Мигнуть светодиодом ${N(i)} этажа`);
+        t.onclick = () => { api.cmd('ledtest', i); toast(`Мигает светодиод ${N(i)} этажа`); };
+        g.appendChild(t);
+        ioTiles[i] = t;
+      }
+      ioDrawn = s.floors;
+    }
+    for (let i = 0; i < s.floors; i++) {
+      const t = ioTiles[i];
+      t.classList.toggle('pressed', !!(s.btn && s.btn[i]));
+      t.classList.toggle('lit', s.led[i] === 'test');
+      t.querySelector('.hl').classList.toggle('on', !!s.hall[i]);
+    }
+  }
+
   // ---------- Настройки ----------
   const SCHEMA = [
     ['Лифт', [
       { k: 'floors', l: 'Сколько этажей', t: 'num', min: 2, max: 25, step: 1 },
       { k: 'mode', l: 'Как лифт выбирает, куда ехать', t: 'sel', opts: Object.entries(MODES).map(([v, a]) => [v, a[0]]) },
       { k: 'dwell', l: 'Сколько стоять на этаже', t: 'range', min: 0.5, max: 20, step: 0.5, u: 'с' },
-      { k: 'night', l: 'Ночной режим', h: 'Тише и медленнее, подсветка слабее', t: 'chk' },
+      { k: 'night', l: 'Ночной режим', h: 'Тише и медленнее, подсветка до «яркости ночью»', t: 'chk' },
     ]],
     ['Скорость', [
       { k: 'vmax', l: 'Максимальная скорость', t: 'range', min: 20, max: 300, step: 5, u: 'мм/с' },
@@ -196,6 +250,10 @@
     ]],
     ['Подсветка', [
       { k: 'brightness', l: 'Яркость светодиодов', t: 'range', min: 5, max: 100, step: 5, u: '%' },
+      { k: 'nightAuto', l: 'Приглушать подсветку ночью по расписанию', h: 'Только свет, скорость не меняется', t: 'chk' },
+      { k: 'nightFrom', l: 'Ночь начинается', t: 'time' },
+      { k: 'nightTo', l: 'Ночь заканчивается', t: 'time' },
+      { k: 'nightBright', l: 'Яркость ночью', t: 'range', min: 1, max: 50, step: 1, u: '%' },
     ]],
     ['Режимы для показа', [
       { k: 'demo', l: 'Лифт сам вызывает себя', t: 'chk' },
@@ -208,6 +266,7 @@
       { k: 'cpm', l: 'Импульсов энкодера на 1 мм', h: 'Измеряется калибровкой', t: 'num', min: 0.5, max: 50, step: 0.01 },
       { k: 'useEnc', l: 'Энкодер подключён', h: 'Выключите, пока мотор без энкодера: положение считается по времени, остановка по датчикам этажей', t: 'chk', simHide: true },
       { k: 'openGain', l: 'Мощность на 1 мм/с (без энкодера)', h: 'Подбирается автоматически при калибровке', t: 'num', min: 0.05, max: 5, step: 0.01, simHide: true },
+      { k: 'minDuty', l: 'Мощность старта мотора (без энкодера)', h: 'Ниже этого мотор не трогается. Если не крутит, увеличьте', t: 'range', min: 10, max: 90, step: 1, u: '%', simHide: true },
       { k: 'invMotor', l: 'Развернуть мотор', t: 'chk' },
       { k: 'invEnc', l: 'Развернуть энкодер', t: 'chk' },
       { k: 'invHall', l: 'Инвертировать датчики Холла', t: 'chk' },
@@ -259,6 +318,12 @@
           ctl = document.createElement('select');
           f.opts.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; ctl.appendChild(o); });
           ctl.value = val; ctl.onchange = () => queueSave(f.k, ctl.value);
+        } else if (f.t === 'time') {
+          ctl = document.createElement('input'); ctl.type = 'time'; ctl.value = hhmm(+val || 0);
+          ctl.onchange = () => {
+            const m = /^(\d\d):(\d\d)$/.exec(ctl.value);
+            if (m) queueSave(f.k, (+m[1]) * 60 + (+m[2]));
+          };
         } else if (f.t === 'range') {
           ctl = document.createElement('div');
           ctl.innerHTML = `<input type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${val}"><div class="val"></div>`;
@@ -287,6 +352,11 @@
         }
         wrap.appendChild(ctl);
         card.appendChild(wrap);
+      }
+      if (title === 'Подсветка') {
+        const ci = document.createElement('p');
+        ci.className = 'why'; ci.id = 'clockinfo';
+        card.appendChild(ci);
       }
       if (title === 'Сеть' && !api.sim) {
         const info = document.createElement('p');
@@ -393,6 +463,16 @@
     $('#c-home').onclick = () => api.cmd('home');
     $('#c-cal').onclick = () => api.cmd('calibrate');
     $('#c-stop').onclick = () => api.cmd('stop');
+    $('#io-toggle').onclick = () => ioSet(!ioOn);
+    $('#io-chase').onclick = () => { api.cmd('ledtest', 100); toast('Светодиоды загораются по очереди'); };
+    $('#mt-fwd').onclick = async () => {
+      if (api.sim) return toast('В симуляторе мотора нет');
+      await api.cmd('motortest', 1); toast('Мотор крутится вперёд 1 секунду');
+    };
+    $('#mt-back').onclick = async () => {
+      if (api.sim) return toast('В симуляторе мотора нет');
+      await api.cmd('motortest', -1); toast('Мотор крутится назад 1 секунду');
+    };
     $('#btn-reboot').onclick = async () => {
       if (api.sim) return toast('В симуляторе перезагружать нечего');
       if (confirm('Перезагрузить лифт? Он снова будет искать первый этаж.')) { await api.cmd('reboot'); toast('Перезагружаюсь…'); }
@@ -418,6 +498,8 @@
     await connect();
     await refreshCfg();
     setupOta();
+    api.syncTime().catch(() => {});
+    setInterval(() => api.syncTime().catch(() => {}), 5 * 60 * 1000);
     buildShaft(cfg.floors || 5);
     tick();
     setInterval(renderLog, 1500);

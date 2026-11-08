@@ -1,6 +1,6 @@
 const assert = require('node:assert');
 const { test } = require('node:test');
-const { plan } = require('../web/src/dispatcher.js');
+const { plan, inWindow } = require('../web/src/dispatcher.js');
 
 const base = { mode: 'down', pos: 0, dir: 0, moving: false, brake: 0.3, target: -1, priorityOn: false };
 const calls = (...fs) => fs.map((f, i) => ({ f, t: i, prio: false }));
@@ -79,4 +79,16 @@ test('приоритет выключен: игнорируется', () => {
 test('движущаяся кабина, все вызовы позади: сохраняем текущую цель', () => {
   const r = plan({ ...base, pos: 4.9, dir: -1, moving: true, target: 4, brake: 0.3, calls: calls(5) });
   assert.strictEqual(r.target, 4);
+});
+
+test('ночное окно: обычное и через полночь', () => {
+  const h = (x) => x * 60;
+  assert.strictEqual(inWindow(h(12), h(9), h(17)), true);
+  assert.strictEqual(inWindow(h(17), h(9), h(17)), false);   // конец не входит
+  assert.strictEqual(inWindow(h(8), h(9), h(17)), false);
+  assert.strictEqual(inWindow(h(23), h(21), h(7)), true);    // 21:00-07:00
+  assert.strictEqual(inWindow(h(3), h(21), h(7)), true);
+  assert.strictEqual(inWindow(h(7), h(21), h(7)), false);
+  assert.strictEqual(inWindow(h(12), h(21), h(7)), false);
+  assert.strictEqual(inWindow(h(5), h(6), h(6)), false);     // пустое окно
 });

@@ -9,6 +9,7 @@
     parkEnabled: false, parkFloor: 1, parkIdle: 60, longPress: 5,
     priorityOn: false, prioMask: '',
     brightness: 40, night: false, demo: false, slowmo: false, faultHall: -1,
+    nightAuto: false, nightFrom: 21 * 60, nightTo: 7 * 60, nightBright: 10,
     pitch: 100, hallZone: 12, cpm: 23.0,
     invMotor: false, invEnc: false, invHall: false, kp: 1.2, ki: 0.8,
     hostname: 'lift', ssid: '', pass: '',
@@ -33,6 +34,9 @@
       this.parking = false;
       this.cal = { done: false, centers: [], progress: 0, phase: '' };
       this.logs = [];
+      this.btnHeld = [];
+      this.ioTest = 0; this.blinkT = 0; this.blinkFloor = -1; this.chase = -1; this.chaseT = 0;
+      this.noEdge = 0;
       this.t0 = performance.now();
       this.last = this.t0;
       this.say('Включился. Ищу первый этаж.');
@@ -52,8 +56,11 @@
 
     isPrio(f) { return this.cfg.prioMask[f] === '1'; }
 
+    // Нажатие настоящей кнопки на панели (для проверки кнопок): держим состояние.
+    press(f, down) { this.btnHeld[f] = !!down; }
+
     call(f) {
-      if (f < 0 || f >= this.cfg.floors || this.state === 'fault') return false;
+      if (f < 0 || f >= this.cfg.floors || this.state === 'fault' || this.ioTest > 0) return false;
       if (this.calls.some((c) => c.f === f)) return true;
       this.calls.push({ f, t: this.seq++, prio: this.isPrio(f) });
       this.say(`Вызов с ${f + 1} этажа`);
@@ -78,6 +85,14 @@
         case 'calibrate':
           if (this.state === 'idle') { this.state = 'calibrating'; this.cal = { done: false, centers: [], progress: 0, phase: 'up' }; this.say('Калибровка: еду вверх.'); }
           break;
+        case 'ledtest':
+          if (arg >= 0 && arg < this.cfg.floors) { this.blinkFloor = arg; this.blinkT = 4; this.chase = -1; }
+          else if (arg === 100) { this.chase = 0; this.chaseT = 0; this.blinkT = 0; this.blinkFloor = -1; }
+          break;
+        case 'iotest':
+          this.ioTest = arg ? 90 : 0;
+          if (!arg) { this.blinkT = 0; this.blinkFloor = -1; this.chase = -1; }
+          break;
         case 'park': this.cfg.parkFloor = (arg | 0) + 1; this.cfg.parkEnabled = true; this.say(`Парковка: ${arg + 1} этаж`); break;
         case 'reset': Object.assign(this.cfg, DEFAULTS); this.say('Настройки сброшены'); break;
       }
@@ -95,6 +110,10 @@
       const vmax = c.vmax * k, a = c.accel * k, creep = Math.min(c.creep, vmax);
       const topMM = (c.floors - 1) * pitch;
 
+      if (this.ioTest > 0) this.ioTest -= dt;
+      if (this.blinkT > 0) { this.blinkT -= dt; if (this.blinkT <= 0) this.blinkFloor = -1; }
+      if (this.chase >= 0) { this.chaseT += dt; if (this.chaseT >= 0.4) { this.chaseT = 0; if (++this.chase >= c.floors) this.chase = -1; } }
+
       // Проверка датчика: если Холл сломан, лифт замечает это, проезжая этаж.
       if ((this.state === 'moving' || this.state === 'calibrating') && c.faultHall >= 0 && c.faultHall < c.floors &&
           Math.abs(this.pos - c.faultHall * pitch) < 1.5) {
@@ -107,7 +126,17 @@
       if (this.state === 'homing') {
         this.vel = -creep;
         this.pos += this.vel * dt;
-        if (this.pos <= 0) { this.pos = 0; this.vel = 0; this.cur = 0; this.dir = 0; this.state = 'idle'; this.say('Нашёл первый этаж. Готов.'); }
+        if (this.pos <= 0 && c.faultHall === 0) {
+          // Датчик 1-го этажа «сломан»: кабина упёрлась в упор, и сторож останавливает мотор (как в прошивке).
+          this.pos = 0; this.vel = 0; this.noEdge += dt;
+          if (this.noEdge > 3 * pitch / Math.max(5, creep) + 2) {
+            this.state = 'fault'; this.noEdge = 0;
+            this.fault = 'Ни один датчик этажа не сработал, кабина не едет или не видит магнит. Проверьте нитку, магнит кабины, датчик и провод 1 этажа';
+            this.say(this.fault);
+          }
+          return;
+        }
+        if (this.pos <= 0) { this.pos = 0; this.vel = 0; this.noEdge = 0; this.cur = 0; this.dir = 0; this.state = 'idle'; this.say('Нашёл первый этаж. Готов.'); }
         if (this.pos > topMM + 10) this.pos = topMM + 10;
       } else if (this.state === 'calibrating') {
         const up = this.cal.phase === 'up';
@@ -200,16 +229,22 @@
       for (let i = 0; i < c.floors; i++) hall.push(this.hallAt(i));
       const here = this.state === 'idle' || this.state === 'dwell' ? this.cur : -1;
       const led = [];
+      const btn = [];
+      const testOn = (i) => (this.chase >= 0 ? this.chase === i : this.blinkT > 0 && this.blinkFloor === i && (Math.floor(this.blinkT * 4) & 1));
       for (let i = 0; i < c.floors; i++) {
-        led.push(this.calls.some((x) => x.f === i) ? 'call' : i === here ? 'here' : 'off');
+        led.push(testOn(i) ? 'test' : this.calls.some((x) => x.f === i) ? 'call' : i === here ? 'here' : 'off');
+        btn.push(this.btnHeld[i] ? 1 : 0);
       }
+      const d = new Date();
+      const clock = d.getHours() * 60 + d.getMinutes();
+      const nightNow = !!c.night || (c.nightAuto && D.inWindow(clock, c.nightFrom, c.nightTo));
       const floorF = this.pos / c.pitch;
       return {
         sim: true, floors: c.floors, pos: +this.pos.toFixed(1), vel: +this.vel.toFixed(1),
         floor: Math.max(0, Math.min(c.floors - 1, Math.round(floorF))),
         state: this.state, dir: this.dir, target: this.target,
         calls: this.calls.slice().sort((x, y) => x.t - y.t).map((x) => x.f),
-        hall, led, fault: this.fault, parking: this.parking,
+        hall, led, btn, ioTest: this.ioTest > 0, clock, nightNow, fault: this.fault, parking: this.parking,
         counts: Math.round(this.pos * c.cpm), pwm: Math.round(Math.min(100, Math.abs(this.vel) / Math.max(1, c.vmax) * 80)),
         cal: this.cal, mode: c.mode, uptime: Math.round((performance.now() - this.t0) / 1000),
         parkFloor: c.parkEnabled ? c.parkFloor - 1 : -1,

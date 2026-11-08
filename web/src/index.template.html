@@ -77,6 +77,15 @@
     </div>
     <div class="progress"><div id="c-prog"></div></div>
   </div>
+  <div class="card">
+    <h2>Проверка кнопок и светодиодов</h2>
+    <p class="why">Включите проверку: вызовы лифта отключатся, а нажатая настоящая кнопка этажа зажжёт его светодиод белым и подсветит плитку ниже. Нажмите на плитку, и светодиод этого этажа замигает фиолетовым: так находят перепутанные провода. Красная точка в плитке: датчик Холла видит магнит. Проверка сама выключится через 90 секунд без связи.</p>
+    <div class="row">
+      <button class="btn primary" id="io-toggle">Включить проверку</button>
+      <button class="btn" id="io-chase">Пробежка по всем</button>
+    </div>
+    <div class="iogrid" id="io-grid"></div>
+  </div>
   <div class="card"><h2>Датчики Холла</h2><table id="c-table"></table></div>
 </section>
 
@@ -87,6 +96,14 @@
     <p class="why" id="otahint">Выберите файл .bin, собранный в Arduino IDE (Скетч → Экспорт скомпилированного бинарного файла).</p>
     <form id="otaform"><div class="row"><input type="file" id="otafile" accept=".bin"><button class="btn primary" type="submit">Обновить</button></div></form>
     <div class="progress"><div id="ota-prog"></div></div>
+  </div>
+  <div class="card">
+    <h2>Проверка мотора</h2>
+    <p class="why">Мотор крутится 1 секунду на средней мощности, без датчиков и расчётов. Нужна, чтобы проверить проводку и направление. Лучше без кабины на нитке: кабина может доехать до упора. Работает, когда лифт стоит или в ошибке.</p>
+    <div class="row">
+      <button class="btn" id="mt-fwd">Мотор вперёд</button>
+      <button class="btn" id="mt-back">Мотор назад</button>
+    </div>
   </div>
   <div class="card">
     <h2>Сброс</h2>

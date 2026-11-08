@@ -61,3 +61,14 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
 .toast.show { opacity: 1; }
 .fault { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--card)); }
 .hidden { display: none !important; }
+.callbtn.test { background: #b000ff; border-color: #b000ff; color: #fff; }
+.field input[type=time] { width: 100%; min-height: 44px; font: inherit; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.iogrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; margin-top: 12px; }
+.iotile { position: relative; min-height: 64px; border-radius: 12px; border: 2px solid var(--line); background: var(--card); color: var(--ink); font: inherit; cursor: pointer; touch-action: manipulation; }
+.iotile b { font-size: 20px; }
+.iotile.pressed { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.iotile.lit { background: #b000ff; border-color: #b000ff; color: #fff; }
+.iotile .d { position: absolute; top: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+.iotile .d.btn { display: none; }
+.iotile .d.hl { right: 6px; }
+.iotile .d.hl.on { background: var(--bad); box-shadow: 0 0 6px var(--bad); }

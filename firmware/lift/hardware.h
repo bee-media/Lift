@@ -56,7 +56,16 @@ static Adafruit_NeoPixel g_strip(MAX_FLOORS, PIN_LED_DATA, NEO_GRB + NEO_KHZ800)
 namespace HW {
 
 // Опрос и настройка расширителей. Можно вызывать повторно (например, после починки проводов).
+// g_found: все адреса, отозвавшиеся на шине I2C (для понятного сообщения об ошибке).
+static uint8_t g_found[16];
+static int g_foundN = 0;
+
 static void probeExpanders() {
+  g_foundN = 0;
+  for (uint8_t a = 0x08; a < 0x78 && g_foundN < 16; a++) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) g_found[g_foundN++] = a;
+  }
   for (int i = 0; i < 4; i++) {
     bool ok = mcpWrite(MCP_ADDR[i], 0x00, 0xFF);  // IODIRA: все входы
     ok = ok && mcpWrite(MCP_ADDR[i], 0x01, 0xFF);  // IODIRB
@@ -120,9 +129,12 @@ static int32_t encoder() { return g_enc; }
 static void motorDrive(float pct) {
   if (pct > 100) pct = 100;
   if (pct < -100) pct = -100;
+  // Медленный спад: ведущий вход всегда 1, на втором входе ШИМ с обратной скважностью. В паузах оба входа
+  // в 1 = торможение, и напряжение на моторе равно D * Vпит. (ШИМ на IN1 при IN2 = 0 даёт быстрый спад:
+  // в паузах мотор отпускается, и среднее напряжение (2D-1)*V, при D < 50 % мотор вообще не трогается.)
   uint32_t d = (uint32_t)(fabsf(pct) * 10.23f);
-  if (pct > 0) { ledcWrite(PIN_MOT_IN1, d); ledcWrite(PIN_MOT_IN2, 0); }
-  else if (pct < 0) { ledcWrite(PIN_MOT_IN1, 0); ledcWrite(PIN_MOT_IN2, d); }
+  if (pct > 0) { ledcWrite(PIN_MOT_IN1, 1023); ledcWrite(PIN_MOT_IN2, 1023 - d); }
+  else if (pct < 0) { ledcWrite(PIN_MOT_IN2, 1023); ledcWrite(PIN_MOT_IN1, 1023 - d); }
   else { ledcWrite(PIN_MOT_IN1, 1023); ledcWrite(PIN_MOT_IN2, 1023); }
 }
 static void motorBrake() { motorDrive(0); }

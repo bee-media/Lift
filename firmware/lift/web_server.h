@@ -85,9 +85,15 @@ static String stateJson() {
   for (int f = 0; f < n; f++) {
     if (f) s += ",";
     int ls = lift.ledState(f);
-    s += ls == 1 ? "\"call\"" : (ls == 2 ? "\"here\"" : "\"off\"");
+    s += lift.ledTestOn(f) ? "\"test\"" : (ls == 1 ? "\"call\"" : (ls == 2 ? "\"here\"" : "\"off\""));
   }
-  s += "],\"fault\":\""; if (lift.state == ST_FAULT) s += lift.fault; s += "\"";
+  s += "],\"btn\":[";
+  uint32_t bt = lift.buttonsNow();
+  for (int f = 0; f < n; f++) { if (f) s += ","; s += ((bt >> f) & 1) ? 1 : 0; }
+  s += "],\"ioTest\":"; s += lift.ioTestOn() ? "true" : "false";
+  s += ",\"clock\":"; s += clockMinutes();
+  s += ",\"nightNow\":"; s += (c.night || nightScheduled()) ? "true" : "false";
+  s += ",\"fault\":\""; if (lift.state == ST_FAULT) s += lift.fault; s += "\"";
   s += ",\"parking\":"; s += lift.parking ? "true" : "false";
   s += ",\"counts\":"; s += (long)lift.counts();
   s += ",\"noEnc\":"; s += g_useEnc ? "false" : "true";
@@ -123,6 +129,10 @@ static String configJson() {
   s += ",\"prioMask\":\""; s += c.prioMask; s += "\"";
   s += ",\"brightness\":"; s += c.brightness;
   s += ",\"night\":"; s += c.night ? "true" : "false";
+  s += ",\"nightAuto\":"; s += g_nightAuto ? "true" : "false";
+  s += ",\"nightFrom\":"; s += (int)g_nightFrom;
+  s += ",\"nightTo\":"; s += (int)g_nightTo;
+  s += ",\"nightBright\":"; s += (int)g_nightBright;
   s += ",\"demo\":"; s += c.demo ? "true" : "false";
   s += ",\"slowmo\":"; s += c.slowmo ? "true" : "false";
   s += ",\"faultHall\":"; s += (int)c.faultHall;
@@ -131,6 +141,7 @@ static String configJson() {
   s += ",\"cpm\":"; s += String(c.cpm, 3);
   s += ",\"useEnc\":"; s += g_useEnc ? "true" : "false";
   s += ",\"openGain\":"; s += String(g_openGain, 2);
+  s += ",\"minDuty\":"; s += String(g_minDuty, 0);
   s += ",\"invMotor\":"; s += c.invMotor ? "true" : "false";
   s += ",\"invEnc\":"; s += c.invEnc ? "true" : "false";
   s += ",\"invHall\":"; s += c.invHall ? "true" : "false";
@@ -161,6 +172,14 @@ static void applyConfigBody(const String& b) {
   if (jStr(b, "prioMask", tmp, sizeof(tmp))) { strncpy(s.prioMask, tmp, MAX_FLOORS); s.prioMask[MAX_FLOORS] = 0; }
   if (jNum(b, "brightness", v)) s.brightness = constrain((int)v, 5, 100);
   if (jBool(b, "night", bv)) s.night = bv;
+  {
+    bool a0 = g_nightAuto; uint16_t f0 = g_nightFrom, t0 = g_nightTo; uint8_t b0 = g_nightBright;
+    if (jBool(b, "nightAuto", bv)) g_nightAuto = bv;
+    if (jNum(b, "nightFrom", v)) g_nightFrom = constrain((int)v, 0, 1439);
+    if (jNum(b, "nightTo", v)) g_nightTo = constrain((int)v, 0, 1439);
+    if (jNum(b, "nightBright", v)) g_nightBright = constrain((int)v, 1, 100);
+    if (a0 != g_nightAuto || f0 != g_nightFrom || t0 != g_nightTo || b0 != g_nightBright) nightSave();
+  }
   if (jBool(b, "demo", bv)) s.demo = bv;
   if (jBool(b, "slowmo", bv)) s.slowmo = bv;
   if (jNum(b, "faultHall", v)) s.faultHall = constrain((int)v, -1, MAX_FLOORS - 1);
@@ -169,10 +188,11 @@ static void applyConfigBody(const String& b) {
   if (jNum(b, "cpm", v)) s.cpm = constrain(v, 0.5f, 100.0f);
   // Режим без энкодера: при переключении лифт заново ищет первый этаж.
   bool encOld = g_useEnc;
-  float gainOld = g_openGain;
+  float gainOld = g_openGain, minOld = g_minDuty;
   if (jBool(b, "useEnc", bv)) g_useEnc = bv;
   if (jNum(b, "openGain", v)) g_openGain = constrain(v, 0.05f, 5.0f);
-  if (g_useEnc != encOld || g_openGain != gainOld) motorOptSave();
+  if (jNum(b, "minDuty", v)) g_minDuty = constrain(v, 5.0f, 90.0f);
+  if (g_useEnc != encOld || g_openGain != gainOld || g_minDuty != minOld) motorOptSave();
   if (g_useEnc != encOld) {
     liftLog(g_useEnc ? "Энкодер включён" : "Энкодер выключен: положение по времени и датчикам");
     lift.post(CMD_HOME);
@@ -233,6 +253,8 @@ static void netBegin() {
     if (WiFi.status() == WL_CONNECTED) liftLog("Домашний Wi-Fi подключён: %s", WiFi.localIP().toString().c_str());
     else liftLog("Не удалось подключиться к домашнему Wi-Fi, лифт доступен через LIFT-Setup");
   }
+  // Время из интернета, когда лифт подключён к домашней сети (иначе часы задаёт браузер панели).
+  configTime(0, 0, "pool.ntp.org", "time.google.com");
   if (MDNS.begin(s.hostname)) MDNS.addService("http", "tcp", 80);
   ArduinoOTA.setHostname(s.hostname);
   ArduinoOTA.onStart([]() { lift.post(CMD_STOP); });
@@ -248,6 +270,18 @@ static void webBegin() {
   server.on("/api/state", HTTP_GET, []() { server.sendHeader("Cache-Control", "no-store"); server.send(200, "application/json", stateJson()); });
   server.on("/api/config", HTTP_GET, []() { server.send(200, "application/json", configJson()); });
   server.on("/api/config", HTTP_POST, []() { applyConfigBody(server.arg("plain")); server.send(200, "application/json", "{\"ok\":true}"); });
+  // Панель присылает время браузера (секунды UTC и часовой пояс в минутах): лифту нужны часы для ночного режима.
+  server.on("/api/time", HTTP_POST, []() {
+    long t = server.arg("t").toInt();
+    int tz = server.arg("tz").toInt();
+    if (t > 1700000000L) {
+      struct timeval tv = { (time_t)t, 0 };
+      time_t cur = time(nullptr);
+      if (cur < 1700000000L || labs((long)cur - t) > 2) settimeofday(&tv, nullptr);
+    }
+    if (tz >= -720 && tz <= 840 && tz != g_tzMin) { g_tzMin = tz; nightSave(); }
+    server.send(200, "application/json", "{\"ok\":true}");
+  });
   server.on("/api/log", HTTP_GET, []() { server.send(200, "application/json", logJson()); });
   server.on("/api/call", HTTP_POST, []() { lift.post(CMD_CALL, server.arg("f").toInt()); server.send(200, "application/json", "{\"ok\":true}"); });
   server.on("/api/cmd", HTTP_POST, []() {
@@ -259,6 +293,9 @@ static void webBegin() {
     else if (n == "calibrate") lift.post(CMD_CALIBRATE);
     else if (n == "park") lift.post(CMD_PARK, a);
     else if (n == "reset") lift.post(CMD_RESET);
+    else if (n == "motortest") lift.post(CMD_MOTORTEST, a);
+    else if (n == "ledtest") lift.post(CMD_LEDTEST, a);
+    else if (n == "iotest") lift.post(CMD_IOTEST, a);
     else if (n == "wifi") {
       // Подключиться к сохранённой домашней сети без перезагрузки; точка LIFT-Setup остаётся.
       Settings c = lift.getConfig();

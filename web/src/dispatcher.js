@@ -77,5 +77,13 @@
     return keep;
   }
 
-  return { plan };
+  // Попадает ли время m (минут от полуночи) в окно [from, to); окно может переходить через полночь.
+  // Для ночной подсветки. То же в firmware/lift/config.h (inWindow).
+  function inWindow(m, from, to) {
+    if (from === to) return false;
+    if (from < to) return m >= from && m < to;
+    return m >= from || m < to;
+  }
+
+  return { plan, inWindow };
 });

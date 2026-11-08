@@ -11,7 +11,7 @@ enum State : uint8_t { ST_HOMING, ST_IDLE, ST_MOVING, ST_DWELL, ST_CALIB, ST_FAU
 static const char* const STATE_NAMES[] = { "homing", "idle", "moving", "dwell", "calibrating", "fault" };
 static const char* const MODE_NAMES[] = { "down", "fifo", "both" };
 
-enum CmdType : uint8_t { CMD_CALL, CMD_HOME, CMD_STOP, CMD_CLEAR, CMD_CALIBRATE, CMD_PARK, CMD_RESET };
+enum CmdType : uint8_t { CMD_CALL, CMD_HOME, CMD_STOP, CMD_CLEAR, CMD_CALIBRATE, CMD_PARK, CMD_RESET, CMD_MOTORTEST, CMD_LEDTEST, CMD_IOTEST };
 struct CmdMsg { CmdType c; int arg; };
 
 // ---------- Журнал ----------
@@ -66,6 +66,7 @@ class Lift {
     settingsLoad(webCfg);
     cfg = webCfg;
     motorOptLoad();
+    nightLoad();
     calLoad(cal, cfg);
     calDone = cal.done;
     encOff = (float)encS();
@@ -109,13 +110,41 @@ class Lift {
   }
   float calCenter(int f) const { return cal.center[f]; }
 
+  // ---- Проверка кнопок и светодиодов (при монтаже) ----
+  // Пока режим включён, нажатия кнопок не вызывают лифт, а зажигают светодиод своего этажа.
+  bool ioTestOn() const { return ioTestT > 0; }
+  uint32_t buttonsNow() const { return btnStable; }
+  bool ledTestOn(int f) const {   // светодиод этажа f сейчас мигает по команде проверки (для панели)
+    if (chaseIdx >= 0) return chaseIdx == f;
+    return blinkT > 0 && blinkFloor == f && (((int)(blinkT * 4)) & 1);
+  }
+
   // =========================================================================
   void tick(float dt) {
+    if (ioTestT > 0) ioTestT -= dt;
+    if (blinkT > 0) { blinkT -= dt; if (blinkT <= 0) blinkFloor = -1; }
+    if (chaseIdx >= 0) {
+      chaseT += dt;
+      if (chaseT >= 0.4f) { chaseT = 0; if (++chaseIdx >= cfg.floors) chaseIdx = -1; }
+    }
     applyCommands();
     syncConfig();
     readInputs();
     updatePosition(dt);
     handleButtons(dt);
+
+    if (testT > 0) {   // идёт ручная проверка мотора
+      testT -= dt;
+      float u = TEST_DUTY * testDir;
+      pwm = u;
+      HW::motorDrive(cfg.invMotor ? -u : u);
+      if (testT <= 0) {
+        stopMotor();
+        if (state != ST_FAULT) startHoming();   // кабина сдвинулась: заново находим первый этаж
+      }
+      updateLeds();
+      return;
+    }
 
     switch (state) {
       case ST_HOMING: stepHoming(dt); break;
@@ -156,6 +185,12 @@ class Lift {
 
   // ---- Движение ----
   float vcmd = 0, iterm = 0, stuckT = 0, wrongT = 0, timer = 0, idleFor = 0, demoIn = 4;
+  float testT = 0;
+  int8_t testDir = 0;
+  float ioTestT = 0, blinkT = 0, chaseT = 0;   // проверка кнопок и светодиодов
+  int8_t blinkFloor = -1, chaseIdx = -1;
+  float noEdgeT = 0;                           // сколько секунд ни один датчик не менял состояние
+  static constexpr float TEST_DUTY = 45.0f;   // мощность ручной проверки мотора, %
   float startMM = 0;
   bool seenRise[MAX_FLOORS] = {false};
   int32_t seqNo = 1;
@@ -181,6 +216,24 @@ class Lift {
         case CMD_STOP: setFault("Нажат аварийный стоп"); break;
         case CMD_CLEAR: if (state == ST_FAULT) { clearFault(); startHoming(); } break;
         case CMD_CALIBRATE: if (state == ST_IDLE) startCalib(); break;
+        case CMD_MOTORTEST:
+          // Ручная проверка мотора: без датчиков и расчётов, только когда лифт стоит или в ошибке.
+          if (state == ST_IDLE || state == ST_FAULT || state == ST_DWELL) {
+            testDir = m.arg > 0 ? 1 : -1;
+            testT = 1.0f;
+            liftLog("Проверка мотора: %s, 1 с, мощность %.0f%%", testDir > 0 ? "вперёд" : "назад", TEST_DUTY);
+          }
+          break;
+        case CMD_LEDTEST:
+          if (m.arg >= 0 && m.arg < cfg.floors) { blinkFloor = m.arg; blinkT = 4.0f; chaseIdx = -1; }
+          else if (m.arg == 100) { chaseIdx = 0; chaseT = 0; blinkT = 0; blinkFloor = -1; }   // пробежка по всем
+          break;
+        case CMD_IOTEST:
+          // 90 секунд без обновления от панели, потом режим выключится сам (чтобы не забыть включённым).
+          ioTestT = m.arg ? 90.0f : 0;
+          if (!m.arg) { blinkT = 0; blinkFloor = -1; chaseIdx = -1; }
+          else liftLog("Проверка кнопок и светодиодов: вызовы отключены");
+          break;
         case CMD_PARK: {
           Settings s = getConfig();
           s.parkFloor = m.arg + 1; s.parkEnabled = true;
@@ -228,7 +281,7 @@ class Lift {
   void clearCalls() { for (int i = 0; i < MAX_FLOORS; i++) callT[i] = 0; target = -1; }
 
   void addCall(int f) {
-    if (f < 0 || f >= cfg.floors || state == ST_FAULT) return;
+    if (f < 0 || f >= cfg.floors || state == ST_FAULT || ioTestT > 0) return;
     if (callT[f]) return;
     callT[f] = seqNo++;
     liftLog("Вызов с %d этажа", f + 1);
@@ -280,6 +333,10 @@ class Lift {
     if (b != btnCand) { btnCand = b; btnCnt = 0; }
     else if (btnCnt < 255) btnCnt++;
     if (btnCnt >= 3) btnStable = btnCand;
+    if (ioTestT > 0) {   // проверка: кнопки только показываются, дом не задаётся
+      for (int f = 0; f < MAX_FLOORS; f++) { holdT[f] = 0; }
+      return;
+    }
     for (int f = 0; f < cfg.floors; f++) {
       bool down = (btnStable >> f) & 1;
       if (down) {
@@ -299,6 +356,7 @@ class Lift {
   // ---- События датчиков ----
   void onHallChange(uint32_t oldH, uint32_t newH, int32_t edgeEnc) {
     uint32_t changed = oldH ^ newH;
+    noEdgeT = 0;
     for (int f = 0; f < cfg.floors; f++) {
       if (!((changed >> f) & 1)) continue;
       bool rise = (newH >> f) & 1;
@@ -333,12 +391,12 @@ class Lift {
       // Без обратной связи: мощность прямо пропорциональна нужной скорости (коэффициент подбирает калибровка).
       float u = g_openGain * vTarget;
       if (fabsf(vTarget) > 1.0f) {
-        const float MIN_DUTY = 10.0f;
-        if (vTarget > 0 && u < MIN_DUTY) u = MIN_DUTY;
-        if (vTarget < 0 && u > -MIN_DUTY) u = -MIN_DUTY;
+        if (u > 0 && u < g_minDuty) u = g_minDuty;
+        if (u < 0 && u > -g_minDuty) u = -g_minDuty;
       }
       pwm = u;
       HW::motorDrive(cfg.invMotor ? -u : u);
+      cmdV = u / g_openGain;   // скорость, которую даёт эта мощность: по ней считаем положение
       return;
     }
     float err = vTarget - velF;
@@ -371,10 +429,21 @@ class Lift {
   void startHoming() {
     HW::probeExpanders();
     if (!expandersReady()) {
-      setFault("Нет расширителей MCP23017: проверьте провода I2C и адреса");
+      // Говорим, каких адресов не хватает и что реально видно на шине.
+      String m = "Нет MCP23017 с адресом:";
+      char t[10];
+      for (int i = 0; i < 4; i++) {
+        bool need = (i == 0 || i == 2) || cfg.floors > 16;
+        if (need && !mcpOk[i]) { snprintf(t, sizeof(t), " 0x%02X", MCP_ADDR[i]); m += t; }
+      }
+      m += ". На шине найдено:";
+      if (HW::g_foundN == 0) m += " ничего (проверьте SDA, SCL, питание 3V3 и GND)";
+      for (int i = 0; i < HW::g_foundN; i++) { snprintf(t, sizeof(t), " 0x%02X", HW::g_found[i]); m += t; }
+      setFault(m.c_str());
       return;
     }
     state = ST_HOMING;
+    noEdgeT = 0;
     homeRiseSeen = false;
     homePhase = (hall & 1) ? 0 : 1;
     travelStart = pos;
@@ -382,10 +451,25 @@ class Lift {
     liftLog("Ищу первый этаж");
   }
 
+  // Сколько секунд можно ехать со скоростью v, не получив ни одного сигнала датчика.
+  // Без энкодера скорость известна лишь примерно (мощность ещё не подобрана), поэтому запас больше.
+  float edgeLimit(float v) const {
+    if (v < 5.0f) v = 5.0f;
+    return (g_useEnc ? 1.6f : 3.0f) * cfg.pitch / v + 2.0f;
+  }
+
   void stepHoming(float dt) {
     float creep = cfg.creep * speedScale();
     if (creep < 8) creep = 8;
     if (fabsf(pos - travelStart) > (cfg.floors * cfg.pitch * 1.3f + 60)) { setFault("Не нашёл первый этаж"); return; }
+    // Сторож: на всём пути между этажами датчик меняет состояние каждые ~pitch/скорость секунд. Если тишина
+    // дольше, кабина упёрлась в упор (датчик 1-го этажа не видит магнит) или датчики не работают. Мотор в упор не давим.
+    noEdgeT += dt;
+    if (noEdgeT > edgeLimit(creep)) {
+      stopMotor();
+      setFault("Ни один датчик этажа не сработал, кабина не едет или не видит магнит. Проверьте нитку, магнит кабины, датчик и провод 1 этажа");
+      return;
+    }
     if (homePhase == 0) {            // стоим в зоне 1-го этажа: сначала выезжаем вверх из неё
       driveVel(creep, dt);
       if (!(hall & 1)) { homePhase = 1; travelStart = pos; }
@@ -411,6 +495,7 @@ class Lift {
     for (int i = 0; i < MAX_FLOORS; i++) { calRiseSeen[i] = false; calFallSeen[i] = false; }
     travelStart = pos;
     calProgress = 0; calDone = false;
+    noEdgeT = 0;
     calStartT = millis();
     state = ST_CALIB;
     liftLog(g_useEnc ? "Калибровка: еду вверх" : "Калибровка без энкодера: еду вверх, измеряю скорость по датчикам");
@@ -454,10 +539,17 @@ class Lift {
   void stepCalib(float dt) {
     float v = cfg.creep * speedScale();
     if (v < 20) v = 20;
+    if (!g_useEnc) { v = 0.5f * cfg.vmax * speedScale(); if (v < 30) v = 30; }  // без энкодера калибруем на рабочей скорости
     driveVel(v, dt);
     float top = (cfg.floors - 1) * cfg.pitch;
     calProgress = constrain(pos / top, 0.0f, 1.0f);
     if (pos - travelStart > (cfg.floors * cfg.pitch * 1.3f + 60)) { setFault("Калибровка: не нашёл верхний датчик"); return; }
+    noEdgeT += dt;
+    if (noEdgeT > edgeLimit(v)) {
+      stopMotor();
+      setFault("Калибровка: датчик не сработал, кабина не едет вверх или не видит магнит. Проверьте нитку, магнит и датчик следующего этажа");
+      return;
+    }
     int last = cfg.floors - 1;
     if (!calFallSeen[last]) return;
     stopMotor();
@@ -468,7 +560,11 @@ class Lift {
         return;
       }
     }
-    if (!g_useEnc) { finishCalibOpenLoop(v); return; }
+    if (!g_useEnc) {
+      float vi = g_minDuty / g_openGain;   // если мощность упёрлась в минимум, заданная скорость выше
+      finishCalibOpenLoop(v > vi ? v : vi);
+      return;
+    }
     float topCenterEnc = 0.5f * (calRiseEnc[last] + calFallEnc[last]);
     float newCpm = (topCenterEnc - encOff) / (last * cfg.pitch);
     if (newCpm < 0.5f || newCpm > 100) { setFault("Калибровка: странное число импульсов"); return; }
@@ -612,12 +708,20 @@ class Lift {
   // ---- Светодиоды этажей ----
   void updateLeds() {
     blink += 0.005f;
-    uint8_t bright = cfg.night ? min((int)cfg.brightness, 15) : cfg.brightness;
+    // Ночью (вручную или по расписанию) яркость не выше «яркости ночью».
+    bool nightLeds = cfg.night || nightScheduled();
+    uint8_t bright = nightLeds ? min((int)cfg.brightness, (int)g_nightBright) : cfg.brightness;
     uint32_t colors[MAX_FLOORS];
     bool faultOn = state == ST_FAULT && ((int)(millis() / 400) & 1);
     for (int f = 0; f < MAX_FLOORS; f++) {
       uint32_t c = 0;
-      if (f < cfg.floors) {
+      if (ioTestT > 0 || blinkT > 0 || chaseIdx >= 0) {
+        // Проверка: нажатая кнопка = белый, мигающий по команде = фиолетовый, остальные погашены.
+        if (f < cfg.floors) {
+          if (ledTestOn(f)) c = 0xB000FF;
+          else if (ioTestT > 0 && ((btnStable >> f) & 1)) c = 0xFFFFFF;
+        }
+      } else if (f < cfg.floors) {
         int ls = ledState(f);
         if (state == ST_FAULT) c = faultOn ? 0xFF0000 : 0x000000;
         else if (state == ST_HOMING) c = (f == 0) ? 0x0000FF : 0;

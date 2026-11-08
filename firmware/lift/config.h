@@ -2,6 +2,8 @@
 #pragma once
 #include <Arduino.h>
 #include <Preferences.h>
+#include <time.h>
+#include <sys/time.h>
 
 #define FW_VERSION "1.0.0"
 #define MAX_FLOORS 25
@@ -146,14 +148,17 @@ static void apPassSave(const String& s) {
 
 // Режим «без энкодера»: временный, пока мотор без датчика оборотов. Хранится отдельно ("liftmot"),
 // чтобы не сбрасывать остальные настройки при добавлении. g_openGain = % мощности на 1 мм/с скорости.
+// g_minDuty = минимальная мощность без энкодера, %: редукторный мотор не трогается с места ниже ~25–30 %.
 static volatile bool g_useEnc = true;
 static volatile float g_openGain = 0.45f;
+static volatile float g_minDuty = 30.0f;
 
 static void motorOptLoad() {
   Preferences p;
   p.begin("liftmot", true);
   g_useEnc = p.getBool("enc", true);
   g_openGain = p.getFloat("gain", 0.45f);
+  g_minDuty = p.getFloat("mind", 30.0f);
   p.end();
 }
 
@@ -162,7 +167,62 @@ static void motorOptSave() {
   p.begin("liftmot", false);
   p.putBool("enc", g_useEnc);
   p.putFloat("gain", g_openGain);
+  p.putFloat("mind", g_minDuty);
   p.end();
+}
+
+// Ночная подсветка по расписанию. Отдельная область ("liftnight"), чтобы добавление этих полей
+// не стирало остальные настройки (в том числе домашний Wi-Fi) при обновлении прошивки.
+// Время на лифте: от браузера (панель сама присылает) или NTP; без часов расписание не работает.
+static volatile bool g_nightAuto = false;
+static volatile uint16_t g_nightFrom = 21 * 60;   // минут от полуночи
+static volatile uint16_t g_nightTo = 7 * 60;
+static volatile uint8_t g_nightBright = 10;       // яркость ночью, %
+static volatile int16_t g_tzMin = 180;            // часовой пояс, минут от UTC
+
+static void nightLoad() {
+  Preferences p;
+  p.begin("liftnight", true);
+  g_nightAuto = p.getBool("auto", false);
+  g_nightFrom = p.getUShort("from", 21 * 60);
+  g_nightTo = p.getUShort("to", 7 * 60);
+  g_nightBright = p.getUChar("bri", 10);
+  g_tzMin = p.getShort("tz", 180);
+  p.end();
+}
+
+static void nightSave() {
+  Preferences p;
+  p.begin("liftnight", false);
+  p.putBool("auto", g_nightAuto);
+  p.putUShort("from", g_nightFrom);
+  p.putUShort("to", g_nightTo);
+  p.putUChar("bri", g_nightBright);
+  p.putShort("tz", g_tzMin);
+  p.end();
+}
+
+// Минут от полуночи по местному времени или -1, если часы ещё не заданы.
+static int clockMinutes() {
+  time_t now = time(nullptr);
+  if (now < 1700000000) return -1;
+  long local = (long)now + (long)g_tzMin * 60L;
+  long m = (local / 60) % 1440;
+  if (m < 0) m += 1440;
+  return (int)m;
+}
+
+// Попадает ли время m в окно [from, to); окно может переходить через полночь. Как Dispatcher.inWindow в dispatcher.js.
+static bool inWindow(int m, int from, int to) {
+  if (from == to) return false;
+  if (from < to) return m >= from && m < to;
+  return m >= from || m < to;
+}
+
+static bool nightScheduled() {
+  if (!g_nightAuto) return false;
+  int m = clockMinutes();
+  return m >= 0 && inWindow(m, g_nightFrom, g_nightTo);
 }
 
 static void factoryReset() {
@@ -173,6 +233,12 @@ static void factoryReset() {
   p.begin("liftmot", false);
   p.clear();
   p.end();
+  Preferences q;
+  q.begin("liftnight", false);
+  q.clear();
+  q.end();
   g_useEnc = true;
   g_openGain = 0.45f;
+  g_minDuty = 30.0f;
+  g_nightAuto = false; g_nightFrom = 21 * 60; g_nightTo = 7 * 60; g_nightBright = 10;
 }

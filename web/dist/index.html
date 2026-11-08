@@ -67,6 +67,17 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
 .toast.show { opacity: 1; }
 .fault { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--card)); }
 .hidden { display: none !important; }
+.callbtn.test { background: #b000ff; border-color: #b000ff; color: #fff; }
+.field input[type=time] { width: 100%; min-height: 44px; font: inherit; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.iogrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; margin-top: 12px; }
+.iotile { position: relative; min-height: 64px; border-radius: 12px; border: 2px solid var(--line); background: var(--card); color: var(--ink); font: inherit; cursor: pointer; touch-action: manipulation; }
+.iotile b { font-size: 20px; }
+.iotile.pressed { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.iotile.lit { background: #b000ff; border-color: #b000ff; color: #fff; }
+.iotile .d { position: absolute; top: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+.iotile .d.btn { display: none; }
+.iotile .d.hl { right: 6px; }
+.iotile .d.hl.on { background: var(--bad); box-shadow: 0 0 6px var(--bad); }
 </style>
 </head>
 <body>
@@ -140,6 +151,15 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
     </div>
     <div class="progress"><div id="c-prog"></div></div>
   </div>
+  <div class="card">
+    <h2>Проверка кнопок и светодиодов</h2>
+    <p class="why">Включите проверку: вызовы лифта отключатся, а нажатая настоящая кнопка этажа зажжёт его светодиод белым и подсветит плитку ниже. Нажмите на плитку, и светодиод этого этажа замигает фиолетовым: так находят перепутанные провода. Красная точка в плитке: датчик Холла видит магнит. Проверка сама выключится через 90 секунд без связи.</p>
+    <div class="row">
+      <button class="btn primary" id="io-toggle">Включить проверку</button>
+      <button class="btn" id="io-chase">Пробежка по всем</button>
+    </div>
+    <div class="iogrid" id="io-grid"></div>
+  </div>
   <div class="card"><h2>Датчики Холла</h2><table id="c-table"></table></div>
 </section>
 
@@ -150,6 +170,14 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
     <p class="why" id="otahint">Выберите файл .bin, собранный в Arduino IDE (Скетч → Экспорт скомпилированного бинарного файла).</p>
     <form id="otaform"><div class="row"><input type="file" id="otafile" accept=".bin"><button class="btn primary" type="submit">Обновить</button></div></form>
     <div class="progress"><div id="ota-prog"></div></div>
+  </div>
+  <div class="card">
+    <h2>Проверка мотора</h2>
+    <p class="why">Мотор крутится 1 секунду на средней мощности, без датчиков и расчётов. Нужна, чтобы проверить проводку и направление. Лучше без кабины на нитке: кабина может доехать до упора. Работает, когда лифт стоит или в ошибке.</p>
+    <div class="row">
+      <button class="btn" id="mt-fwd">Мотор вперёд</button>
+      <button class="btn" id="mt-back">Мотор назад</button>
+    </div>
   </div>
   <div class="card">
     <h2>Сброс</h2>
@@ -240,7 +268,15 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
     return keep;
   }
 
-  return { plan };
+  // Попадает ли время m (минут от полуночи) в окно [from, to); окно может переходить через полночь.
+  // Для ночной подсветки. То же в firmware/lift/config.h (inWindow).
+  function inWindow(m, from, to) {
+    if (from === to) return false;
+    if (from < to) return m >= from && m < to;
+    return m >= from || m < to;
+  }
+
+  return { plan, inWindow };
 });
 </script>
 <script>// Симулятор лифта в браузере. Нужен, чтобы пользоваться панелью без железа.
@@ -254,6 +290,7 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
     parkEnabled: false, parkFloor: 1, parkIdle: 60, longPress: 5,
     priorityOn: false, prioMask: '',
     brightness: 40, night: false, demo: false, slowmo: false, faultHall: -1,
+    nightAuto: false, nightFrom: 21 * 60, nightTo: 7 * 60, nightBright: 10,
     pitch: 100, hallZone: 12, cpm: 23.0,
     invMotor: false, invEnc: false, invHall: false, kp: 1.2, ki: 0.8,
     hostname: 'lift', ssid: '', pass: '',
@@ -278,6 +315,9 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
       this.parking = false;
       this.cal = { done: false, centers: [], progress: 0, phase: '' };
       this.logs = [];
+      this.btnHeld = [];
+      this.ioTest = 0; this.blinkT = 0; this.blinkFloor = -1; this.chase = -1; this.chaseT = 0;
+      this.noEdge = 0;
       this.t0 = performance.now();
       this.last = this.t0;
       this.say('Включился. Ищу первый этаж.');
@@ -297,8 +337,11 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
 
     isPrio(f) { return this.cfg.prioMask[f] === '1'; }
 
+    // Нажатие настоящей кнопки на панели (для проверки кнопок): держим состояние.
+    press(f, down) { this.btnHeld[f] = !!down; }
+
     call(f) {
-      if (f < 0 || f >= this.cfg.floors || this.state === 'fault') return false;
+      if (f < 0 || f >= this.cfg.floors || this.state === 'fault' || this.ioTest > 0) return false;
       if (this.calls.some((c) => c.f === f)) return true;
       this.calls.push({ f, t: this.seq++, prio: this.isPrio(f) });
       this.say(`Вызов с ${f + 1} этажа`);
@@ -323,6 +366,14 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
         case 'calibrate':
           if (this.state === 'idle') { this.state = 'calibrating'; this.cal = { done: false, centers: [], progress: 0, phase: 'up' }; this.say('Калибровка: еду вверх.'); }
           break;
+        case 'ledtest':
+          if (arg >= 0 && arg < this.cfg.floors) { this.blinkFloor = arg; this.blinkT = 4; this.chase = -1; }
+          else if (arg === 100) { this.chase = 0; this.chaseT = 0; this.blinkT = 0; this.blinkFloor = -1; }
+          break;
+        case 'iotest':
+          this.ioTest = arg ? 90 : 0;
+          if (!arg) { this.blinkT = 0; this.blinkFloor = -1; this.chase = -1; }
+          break;
         case 'park': this.cfg.parkFloor = (arg | 0) + 1; this.cfg.parkEnabled = true; this.say(`Парковка: ${arg + 1} этаж`); break;
         case 'reset': Object.assign(this.cfg, DEFAULTS); this.say('Настройки сброшены'); break;
       }
@@ -340,6 +391,10 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
       const vmax = c.vmax * k, a = c.accel * k, creep = Math.min(c.creep, vmax);
       const topMM = (c.floors - 1) * pitch;
 
+      if (this.ioTest > 0) this.ioTest -= dt;
+      if (this.blinkT > 0) { this.blinkT -= dt; if (this.blinkT <= 0) this.blinkFloor = -1; }
+      if (this.chase >= 0) { this.chaseT += dt; if (this.chaseT >= 0.4) { this.chaseT = 0; if (++this.chase >= c.floors) this.chase = -1; } }
+
       // Проверка датчика: если Холл сломан, лифт замечает это, проезжая этаж.
       if ((this.state === 'moving' || this.state === 'calibrating') && c.faultHall >= 0 && c.faultHall < c.floors &&
           Math.abs(this.pos - c.faultHall * pitch) < 1.5) {
@@ -352,7 +407,17 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
       if (this.state === 'homing') {
         this.vel = -creep;
         this.pos += this.vel * dt;
-        if (this.pos <= 0) { this.pos = 0; this.vel = 0; this.cur = 0; this.dir = 0; this.state = 'idle'; this.say('Нашёл первый этаж. Готов.'); }
+        if (this.pos <= 0 && c.faultHall === 0) {
+          // Датчик 1-го этажа «сломан»: кабина упёрлась в упор, и сторож останавливает мотор (как в прошивке).
+          this.pos = 0; this.vel = 0; this.noEdge += dt;
+          if (this.noEdge > 3 * pitch / Math.max(5, creep) + 2) {
+            this.state = 'fault'; this.noEdge = 0;
+            this.fault = 'Ни один датчик этажа не сработал, кабина не едет или не видит магнит. Проверьте нитку, магнит кабины, датчик и провод 1 этажа';
+            this.say(this.fault);
+          }
+          return;
+        }
+        if (this.pos <= 0) { this.pos = 0; this.vel = 0; this.noEdge = 0; this.cur = 0; this.dir = 0; this.state = 'idle'; this.say('Нашёл первый этаж. Готов.'); }
         if (this.pos > topMM + 10) this.pos = topMM + 10;
       } else if (this.state === 'calibrating') {
         const up = this.cal.phase === 'up';
@@ -445,16 +510,22 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
       for (let i = 0; i < c.floors; i++) hall.push(this.hallAt(i));
       const here = this.state === 'idle' || this.state === 'dwell' ? this.cur : -1;
       const led = [];
+      const btn = [];
+      const testOn = (i) => (this.chase >= 0 ? this.chase === i : this.blinkT > 0 && this.blinkFloor === i && (Math.floor(this.blinkT * 4) & 1));
       for (let i = 0; i < c.floors; i++) {
-        led.push(this.calls.some((x) => x.f === i) ? 'call' : i === here ? 'here' : 'off');
+        led.push(testOn(i) ? 'test' : this.calls.some((x) => x.f === i) ? 'call' : i === here ? 'here' : 'off');
+        btn.push(this.btnHeld[i] ? 1 : 0);
       }
+      const d = new Date();
+      const clock = d.getHours() * 60 + d.getMinutes();
+      const nightNow = !!c.night || (c.nightAuto && D.inWindow(clock, c.nightFrom, c.nightTo));
       const floorF = this.pos / c.pitch;
       return {
         sim: true, floors: c.floors, pos: +this.pos.toFixed(1), vel: +this.vel.toFixed(1),
         floor: Math.max(0, Math.min(c.floors - 1, Math.round(floorF))),
         state: this.state, dir: this.dir, target: this.target,
         calls: this.calls.slice().sort((x, y) => x.t - y.t).map((x) => x.f),
-        hall, led, fault: this.fault, parking: this.parking,
+        hall, led, btn, ioTest: this.ioTest > 0, clock, nightNow, fault: this.fault, parking: this.parking,
         counts: Math.round(this.pos * c.cpm), pwm: Math.round(Math.min(100, Math.abs(this.vel) / Math.max(1, c.vmax) * 80)),
         cal: this.cal, mode: c.mode, uptime: Math.round((performance.now() - this.t0) / 1000),
         parkFloor: c.parkEnabled ? c.parkFloor - 1 : -1,
@@ -479,6 +550,10 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
     async call(f) { await fetch('/api/call?f=' + f, { method: 'POST' }); },
     async cmd(n, a) { await fetch('/api/cmd?name=' + n + '&arg=' + (a || 0), { method: 'POST' }); },
     async log() { return (await fetch('/api/log', { cache: 'no-store' })).json(); },
+    // Лифту нужны часы для ночного режима: отдаём ему время этого браузера и часовой пояс.
+    async syncTime() {
+      await fetch('/api/time?t=' + Math.floor(Date.now() / 1000) + '&tz=' + (-new Date().getTimezoneOffset()), { method: 'POST' });
+    },
   };
   let Sim = null;
   const SimApi = {
@@ -489,6 +564,8 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
     async call(f) { Sim.call(f); },
     async cmd(n, a) { Sim.command(n, a); },
     async log() { return Sim.logs; },
+    async syncTime() {},
+    press(f, down) { Sim.press(f, down); },
   };
   let api = Http;
   let cfg = {};
@@ -567,12 +644,13 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
     let timer = 0, fired = false;
     const clear = () => { clearTimeout(timer); timer = 0; };
     btn.addEventListener('pointerdown', () => {
+      if (api.press) api.press(f, true);
       fired = false; clear();
       timer = setTimeout(async () => {
         fired = true; await api.cmd('park', f); toast(`Дом лифта: ${N(f)} этаж`); refreshCfg();
       }, (cfg.longPress || 5) * 1000);
     });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach((e) => btn.addEventListener(e, clear));
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((e) => btn.addEventListener(e, () => { clear(); if (api.press) api.press(f, false); }));
     btn.addEventListener('click', () => { if (!fired) api.call(f); });
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
   }
@@ -580,7 +658,9 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
   function renderState(s) {
     if (s.floors !== drawnFloors) buildShaft(s.floors);
     const pitch = cfg.pitch || 100;
-    const fl = s.pos / pitch;
+    // Ниже пола кабина опуститься не может: при поиске 1-го этажа расчётная высота может уйти в минус
+    // (датчик не видит магнит), а на деле кабина уже стоит на упорах.
+    const fl = Math.max(0, Math.min(s.floors - 1, s.pos / pitch));
     const cab = $('#cab');
     cab.style.top = ((s.floors - 1 - fl) * FH + 8) + 'px';
     $('#cabnum').textContent = N(s.floor);
@@ -589,6 +669,7 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
       e.hall.classList.toggle('on', !!s.hall[i]);
       e.btn.classList.toggle('call', s.led[i] === 'call');
       e.btn.classList.toggle('here', s.led[i] === 'here');
+      e.btn.classList.toggle('test', s.led[i] === 'test');
       e.park.textContent = s.parkFloor === i ? '🏠' : '';
     }
     // Шахта следует за кабиной
@@ -618,6 +699,13 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
     conn.textContent = s.sim ? 'симулятор (лифт не подключён)' : 'лифт на связи';
     conn.className = 'badge ' + (s.sim ? '' : 'ok');
     renderCalib(s);
+    renderIo(s);
+    const ci = $('#clockinfo');
+    if (ci) {
+      ci.textContent = s.clock >= 0
+        ? `Время на лифте: ${hhmm(s.clock)}.${s.nightNow ? ' Сейчас ночной режим: подсветка приглушена.' : ''}`
+        : 'Часы лифта ещё не заданы: откройте панель из браузера (время придёт само) или подключите домашний Wi-Fi. Пока расписание не работает.';
+    }
     const ns = $('#netstatus');
     if (ns) {
       ns.textContent = s.ip
@@ -639,13 +727,50 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
     $('#c-table').innerHTML = h;
   }
 
+  // ---------- Проверка кнопок и светодиодов ----------
+  const hhmm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  let ioOn = false, ioTimer = 0, ioDrawn = 0, ioTiles = [];
+  function ioSet(on) {
+    ioOn = on;
+    clearInterval(ioTimer); ioTimer = 0;
+    api.cmd('iotest', on ? 1 : 0);
+    // Лифт сам выключит проверку через 90 с, поэтому пока вкладка открыта, подтверждаем каждые 30 с.
+    if (on) ioTimer = setInterval(() => api.cmd('iotest', 1), 30000);
+    $('#io-toggle').textContent = on ? 'Выключить проверку' : 'Включить проверку';
+    $('#io-toggle').classList.toggle('primary', !on);
+  }
+  function renderIo(s) {
+    if ($('#tab-calib').classList.contains('hidden')) { if (ioOn) ioSet(false); return; }
+    if (ioDrawn !== s.floors) {
+      const g = $('#io-grid');
+      g.innerHTML = '';
+      ioTiles = [];
+      for (let i = 0; i < s.floors; i++) {
+        const t = document.createElement('button');
+        t.type = 'button'; t.className = 'iotile';
+        t.innerHTML = `<b>${N(i)}</b><span class="d btn" title="кнопка"></span><span class="d hl" title="датчик Холла"></span>`;
+        t.setAttribute('aria-label', `Мигнуть светодиодом ${N(i)} этажа`);
+        t.onclick = () => { api.cmd('ledtest', i); toast(`Мигает светодиод ${N(i)} этажа`); };
+        g.appendChild(t);
+        ioTiles[i] = t;
+      }
+      ioDrawn = s.floors;
+    }
+    for (let i = 0; i < s.floors; i++) {
+      const t = ioTiles[i];
+      t.classList.toggle('pressed', !!(s.btn && s.btn[i]));
+      t.classList.toggle('lit', s.led[i] === 'test');
+      t.querySelector('.hl').classList.toggle('on', !!s.hall[i]);
+    }
+  }
+
   // ---------- Настройки ----------
   const SCHEMA = [
     ['Лифт', [
       { k: 'floors', l: 'Сколько этажей', t: 'num', min: 2, max: 25, step: 1 },
       { k: 'mode', l: 'Как лифт выбирает, куда ехать', t: 'sel', opts: Object.entries(MODES).map(([v, a]) => [v, a[0]]) },
       { k: 'dwell', l: 'Сколько стоять на этаже', t: 'range', min: 0.5, max: 20, step: 0.5, u: 'с' },
-      { k: 'night', l: 'Ночной режим', h: 'Тише и медленнее, подсветка слабее', t: 'chk' },
+      { k: 'night', l: 'Ночной режим', h: 'Тише и медленнее, подсветка до «яркости ночью»', t: 'chk' },
     ]],
     ['Скорость', [
       { k: 'vmax', l: 'Максимальная скорость', t: 'range', min: 20, max: 300, step: 5, u: 'мм/с' },
@@ -664,6 +789,10 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
     ]],
     ['Подсветка', [
       { k: 'brightness', l: 'Яркость светодиодов', t: 'range', min: 5, max: 100, step: 5, u: '%' },
+      { k: 'nightAuto', l: 'Приглушать подсветку ночью по расписанию', h: 'Только свет, скорость не меняется', t: 'chk' },
+      { k: 'nightFrom', l: 'Ночь начинается', t: 'time' },
+      { k: 'nightTo', l: 'Ночь заканчивается', t: 'time' },
+      { k: 'nightBright', l: 'Яркость ночью', t: 'range', min: 1, max: 50, step: 1, u: '%' },
     ]],
     ['Режимы для показа', [
       { k: 'demo', l: 'Лифт сам вызывает себя', t: 'chk' },
@@ -676,6 +805,7 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
       { k: 'cpm', l: 'Импульсов энкодера на 1 мм', h: 'Измеряется калибровкой', t: 'num', min: 0.5, max: 50, step: 0.01 },
       { k: 'useEnc', l: 'Энкодер подключён', h: 'Выключите, пока мотор без энкодера: положение считается по времени, остановка по датчикам этажей', t: 'chk', simHide: true },
       { k: 'openGain', l: 'Мощность на 1 мм/с (без энкодера)', h: 'Подбирается автоматически при калибровке', t: 'num', min: 0.05, max: 5, step: 0.01, simHide: true },
+      { k: 'minDuty', l: 'Мощность старта мотора (без энкодера)', h: 'Ниже этого мотор не трогается. Если не крутит, увеличьте', t: 'range', min: 10, max: 90, step: 1, u: '%', simHide: true },
       { k: 'invMotor', l: 'Развернуть мотор', t: 'chk' },
       { k: 'invEnc', l: 'Развернуть энкодер', t: 'chk' },
       { k: 'invHall', l: 'Инвертировать датчики Холла', t: 'chk' },
@@ -727,6 +857,12 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
           ctl = document.createElement('select');
           f.opts.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; ctl.appendChild(o); });
           ctl.value = val; ctl.onchange = () => queueSave(f.k, ctl.value);
+        } else if (f.t === 'time') {
+          ctl = document.createElement('input'); ctl.type = 'time'; ctl.value = hhmm(+val || 0);
+          ctl.onchange = () => {
+            const m = /^(\d\d):(\d\d)$/.exec(ctl.value);
+            if (m) queueSave(f.k, (+m[1]) * 60 + (+m[2]));
+          };
         } else if (f.t === 'range') {
           ctl = document.createElement('div');
           ctl.innerHTML = `<input type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${val}"><div class="val"></div>`;
@@ -755,6 +891,11 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
         }
         wrap.appendChild(ctl);
         card.appendChild(wrap);
+      }
+      if (title === 'Подсветка') {
+        const ci = document.createElement('p');
+        ci.className = 'why'; ci.id = 'clockinfo';
+        card.appendChild(ci);
       }
       if (title === 'Сеть' && !api.sim) {
         const info = document.createElement('p');
@@ -861,6 +1002,16 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
     $('#c-home').onclick = () => api.cmd('home');
     $('#c-cal').onclick = () => api.cmd('calibrate');
     $('#c-stop').onclick = () => api.cmd('stop');
+    $('#io-toggle').onclick = () => ioSet(!ioOn);
+    $('#io-chase').onclick = () => { api.cmd('ledtest', 100); toast('Светодиоды загораются по очереди'); };
+    $('#mt-fwd').onclick = async () => {
+      if (api.sim) return toast('В симуляторе мотора нет');
+      await api.cmd('motortest', 1); toast('Мотор крутится вперёд 1 секунду');
+    };
+    $('#mt-back').onclick = async () => {
+      if (api.sim) return toast('В симуляторе мотора нет');
+      await api.cmd('motortest', -1); toast('Мотор крутится назад 1 секунду');
+    };
     $('#btn-reboot').onclick = async () => {
       if (api.sim) return toast('В симуляторе перезагружать нечего');
       if (confirm('Перезагрузить лифт? Он снова будет искать первый этаж.')) { await api.cmd('reboot'); toast('Перезагружаюсь…'); }
@@ -886,6 +1037,8 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
     await connect();
     await refreshCfg();
     setupOta();
+    api.syncTime().catch(() => {});
+    setInterval(() => api.syncTime().catch(() => {}), 5 * 60 * 1000);
     buildShaft(cfg.floors || 5);
     tick();
     setInterval(renderLog, 1500);
