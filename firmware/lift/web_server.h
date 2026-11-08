@@ -90,6 +90,7 @@ static String stateJson() {
   s += "],\"fault\":\""; if (lift.state == ST_FAULT) s += lift.fault; s += "\"";
   s += ",\"parking\":"; s += lift.parking ? "true" : "false";
   s += ",\"counts\":"; s += (long)lift.counts();
+  s += ",\"noEnc\":"; s += g_useEnc ? "false" : "true";
   s += ",\"pwm\":"; s += (int)fabsf(lift.pwm);
   s += ",\"cal\":{\"done\":"; s += lift.calDone ? "true" : "false";
   s += ",\"progress\":"; s += String(lift.calProgress, 2);
@@ -128,6 +129,8 @@ static String configJson() {
   s += ",\"pitch\":"; s += f1(c.pitch);
   s += ",\"hallZone\":"; s += f1(c.hallZone);
   s += ",\"cpm\":"; s += String(c.cpm, 3);
+  s += ",\"useEnc\":"; s += g_useEnc ? "true" : "false";
+  s += ",\"openGain\":"; s += String(g_openGain, 2);
   s += ",\"invMotor\":"; s += c.invMotor ? "true" : "false";
   s += ",\"invEnc\":"; s += c.invEnc ? "true" : "false";
   s += ",\"invHall\":"; s += c.invHall ? "true" : "false";
@@ -164,6 +167,16 @@ static void applyConfigBody(const String& b) {
   if (jNum(b, "pitch", v)) s.pitch = constrain(v, 50.0f, 150.0f);
   if (jNum(b, "hallZone", v)) s.hallZone = constrain(v, 4.0f, 40.0f);
   if (jNum(b, "cpm", v)) s.cpm = constrain(v, 0.5f, 100.0f);
+  // Режим без энкодера: при переключении лифт заново ищет первый этаж.
+  bool encOld = g_useEnc;
+  float gainOld = g_openGain;
+  if (jBool(b, "useEnc", bv)) g_useEnc = bv;
+  if (jNum(b, "openGain", v)) g_openGain = constrain(v, 0.05f, 5.0f);
+  if (g_useEnc != encOld || g_openGain != gainOld) motorOptSave();
+  if (g_useEnc != encOld) {
+    liftLog(g_useEnc ? "Энкодер включён" : "Энкодер выключен: положение по времени и датчикам");
+    lift.post(CMD_HOME);
+  }
   if (jBool(b, "invMotor", bv)) s.invMotor = bv;
   if (jBool(b, "invEnc", bv)) s.invEnc = bv;
   if (jBool(b, "invHall", bv)) s.invHall = bv;

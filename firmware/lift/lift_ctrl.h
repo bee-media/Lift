@@ -65,11 +65,13 @@ class Lift {
     for (int i = 0; i < MAX_FLOORS; i++) callT[i] = 0;
     settingsLoad(webCfg);
     cfg = webCfg;
+    motorOptLoad();
     calLoad(cal, cfg);
     calDone = cal.done;
     encOff = (float)encS();
     lastEnc = encS();
     liftLog("Старт, версия %s", FW_VERSION);
+    if (!g_useEnc) liftLog("РЕЖИМ БЕЗ ЭНКОДЕРА: положение по времени, остановка по датчикам Холла");
     if (!HW::allExpandersPresent()) liftLog("Внимание: расширители MCP23017 отвечают не все");
     HW::readInputs();
     hall = HW::hallsPresent(cfg.invHall) & floorMask();
@@ -135,7 +137,12 @@ class Lift {
   float encOff = 0;
   int32_t lastEnc = 0;
   float velF = 0;
-  int32_t encS() const { return cfg.invEnc ? -g_enc : g_enc; }
+  // Без энкодера «счётчик» ведём сами: интегрируем командную скорость (virtCounts), датчики Холла поправляют.
+  float virtCounts = 0, cmdV = 0, vEstF = 0;
+  int32_t encS() const {
+    if (!g_useEnc) return (int32_t)virtCounts;
+    return cfg.invEnc ? -g_enc : g_enc;
+  }
 
   // ---- Датчики, кнопки ----
   uint32_t hallCand = 0, hallStableSet = 0;
@@ -156,6 +163,7 @@ class Lift {
   uint8_t homePhase = 0;
   int32_t homeRiseEnc = 0;
   int32_t calRiseEnc[MAX_FLOORS], calFallEnc[MAX_FLOORS];
+  uint32_t calRiseT[MAX_FLOORS], calFallT[MAX_FLOORS], calStartT = 0;
   bool calRiseSeen[MAX_FLOORS], calFallSeen[MAX_FLOORS];
   uint32_t ledLast[MAX_FLOORS];
   uint32_t ledShown = 0;
@@ -250,6 +258,15 @@ class Lift {
   }
 
   void updatePosition(float dt) {
+    if (!g_useEnc) {
+      vEstF += min(1.0f, dt * 10.0f) * (cmdV - vEstF);   // мотор разгоняется с запаздыванием
+      virtCounts += vEstF * cfg.cpm * dt;
+      velF = vEstF;
+      vel = velF;
+      lastEnc = encS();
+      pos = ((float)lastEnc - encOff) / cfg.cpm;
+      return;
+    }
     int32_t e = encS();
     float v = ((float)(e - lastEnc) / cfg.cpm) / dt;
     lastEnc = e;
@@ -286,8 +303,8 @@ class Lift {
       if (!((changed >> f) & 1)) continue;
       bool rise = (newH >> f) & 1;
       if (state == ST_CALIB) {
-        if (rise) { calRiseEnc[f] = edgeEnc; calRiseSeen[f] = true; }
-        else { calFallEnc[f] = edgeEnc; calFallSeen[f] = true; }
+        if (rise) { calRiseEnc[f] = edgeEnc; calRiseT[f] = millis(); calRiseSeen[f] = true; }
+        else { calFallEnc[f] = edgeEnc; calFallT[f] = millis(); calFallSeen[f] = true; }
       } else if (state == ST_HOMING) {
         if (rise && f == 0) { homeRiseEnc = edgeEnc; homeRiseSeen = true; }
       } else if (state == ST_MOVING) {
@@ -308,9 +325,22 @@ class Lift {
   bool homeRiseSeen = false;
 
   // ---- Мотор ----
-  void stopMotor() { iterm = 0; stuckT = 0; wrongT = 0; pwm = 0; HW::motorBrake(); }
+  void stopMotor() { iterm = 0; stuckT = 0; wrongT = 0; pwm = 0; cmdV = 0; HW::motorBrake(); }
 
   void driveVel(float vTarget, float dt) {
+    cmdV = vTarget;
+    if (!g_useEnc) {
+      // Без обратной связи: мощность прямо пропорциональна нужной скорости (коэффициент подбирает калибровка).
+      float u = g_openGain * vTarget;
+      if (fabsf(vTarget) > 1.0f) {
+        const float MIN_DUTY = 10.0f;
+        if (vTarget > 0 && u < MIN_DUTY) u = MIN_DUTY;
+        if (vTarget < 0 && u > -MIN_DUTY) u = -MIN_DUTY;
+      }
+      pwm = u;
+      HW::motorDrive(cfg.invMotor ? -u : u);
+      return;
+    }
     float err = vTarget - velF;
     iterm += cfg.ki * err * dt;
     if (iterm > 60) iterm = 60;
@@ -381,8 +411,44 @@ class Lift {
     for (int i = 0; i < MAX_FLOORS; i++) { calRiseSeen[i] = false; calFallSeen[i] = false; }
     travelStart = pos;
     calProgress = 0; calDone = false;
+    calStartT = millis();
     state = ST_CALIB;
-    liftLog("Калибровка: еду вверх");
+    liftLog(g_useEnc ? "Калибровка: еду вверх" : "Калибровка без энкодера: еду вверх, измеряю скорость по датчикам");
+  }
+
+  // Калибровка без энкодера: скорость и расстояния находим по времени между датчиками (при постоянной скорости),
+  // а коэффициент мощности подстраиваем так, чтобы реальная скорость совпала с заданной.
+  void finishCalibOpenLoop(float vCmd) {
+    int last = cfg.floors - 1;
+    float tr[MAX_FLOORS], tf[MAX_FLOORS];
+    for (int f = 1; f <= last; f++) {
+      tr[f] = (float)(calRiseT[f] - calStartT) / 1000.0f;
+      tf[f] = (float)(calFallT[f] - calStartT) / 1000.0f;
+    }
+    float vReal = 0, t1 = 0;
+    if (last >= 2) {
+      t1 = 0.5f * (tr[1] + tf[1]);
+      float tl = 0.5f * (tr[last] + tf[last]);
+      if (tl > t1 + 0.2f) vReal = (last - 1) * cfg.pitch / (tl - t1);
+    }
+    if (vReal < 5.0f) { setFault("Калибровка без энкодера: нужно минимум 3 этажа и исправные датчики"); return; }
+    cal.center[0] = 0;
+    cal.half[0] = cfg.hallZone / 2;
+    for (int f = 1; f <= last; f++) {
+      float tc = 0.5f * (tr[f] + tf[f]);
+      cal.center[f] = cfg.pitch + vReal * (tc - t1);
+      cal.half[f] = 0.5f * vReal * (tf[f] - tr[f]);
+    }
+    cal.done = true;
+    calSave(cal);
+    float g = g_openGain * vCmd / vReal;
+    if (g < 0.05f) g = 0.05f;
+    if (g > 5.0f) g = 5.0f;
+    g_openGain = g;
+    motorOptSave();
+    calDone = true;
+    liftLog("Калибровка без энкодера: скорость %.0f мм/с при команде %.0f, коэффициент %.2f", vReal, vCmd, g);
+    startMove(0);
   }
 
   void stepCalib(float dt) {
@@ -402,6 +468,7 @@ class Lift {
         return;
       }
     }
+    if (!g_useEnc) { finishCalibOpenLoop(v); return; }
     float topCenterEnc = 0.5f * (calRiseEnc[last] + calFallEnc[last]);
     float newCpm = (topCenterEnc - encOff) / (last * cfg.pitch);
     if (newCpm < 0.5f || newCpm > 100) { setFault("Калибровка: странное число импульсов"); return; }
@@ -478,7 +545,8 @@ class Lift {
 
     // Проверка: не пропущен ли датчик, мимо которого проехали.
     for (int f = 0; f < cfg.floors; f++) {
-      float c = cal.center[f], mg = cal.half[f] + 6.0f;
+      // Без энкодера положение приблизительное, поэтому допуск шире.
+      float c = cal.center[f], mg = cal.half[f] + (g_useEnc ? 6.0f : 0.3f * pitch);
       bool passedUp = startMM < c - mg && pos > c + mg;
       bool passedDown = startMM > c + mg && pos < c - mg;
       if ((passedUp || passedDown) && !seenRise[f]) {
@@ -506,13 +574,26 @@ class Lift {
     float sgn = dist >= 0 ? 1.0f : -1.0f;
     float ad = fabsf(dist);
     float want = max(min(vmax, sqrtf(2 * a * max(ad - 3.0f, 0.0f))), min(creep, ad * 3));
+    // Без энкодера останавливаемся по датчику: пока датчик нужного этажа не сработал, ползём дальше
+    // на скорости подхода, даже если по расчёту уже приехали. Сработал датчик: положение исправится само.
+    bool waitHall = !g_useEnc && !seenRise[target];
+    if (waitHall) {
+      float mdir = (tmm >= startMM) ? 1.0f : -1.0f;
+      if (ad < 15.0f || sgn != mdir) { sgn = mdir; want = creep; }
+      if ((pos - tmm) * mdir > 0.6f * pitch) {
+        char b[64]; snprintf(b, sizeof(b), "Не вижу датчик на %d этаже", target + 1);
+        setFault(b);
+        return;
+      }
+    }
     float dv = sgn * want - vcmd;
     float lim = a * dt;
     vcmd += constrain(dv, -lim, lim);
     driveVel(vcmd, dt);
     if (state != ST_MOVING) return;
     float after = tmm - pos;
-    if ((after >= 0 ? 1.0f : -1.0f) != sgn || fabsf(after) < 0.4f) arrive(target);
+    bool waitNow = !g_useEnc && !seenRise[target];
+    if (!waitNow && ((after >= 0 ? 1.0f : -1.0f) != sgn || fabsf(after) < 0.4f)) arrive(target);
   }
 
   void arrive(int f) {

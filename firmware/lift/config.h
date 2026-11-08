@@ -144,8 +144,35 @@ static void apPassSave(const String& s) {
   p.end();
 }
 
+// Режим «без энкодера»: временный, пока мотор без датчика оборотов. Хранится отдельно ("liftmot"),
+// чтобы не сбрасывать остальные настройки при добавлении. g_openGain = % мощности на 1 мм/с скорости.
+static volatile bool g_useEnc = true;
+static volatile float g_openGain = 0.45f;
+
+static void motorOptLoad() {
+  Preferences p;
+  p.begin("liftmot", true);
+  g_useEnc = p.getBool("enc", true);
+  g_openGain = p.getFloat("gain", 0.45f);
+  p.end();
+}
+
+static void motorOptSave() {
+  Preferences p;
+  p.begin("liftmot", false);
+  p.putBool("enc", g_useEnc);
+  p.putFloat("gain", g_openGain);
+  p.end();
+}
+
 static void factoryReset() {
   prefs.begin("lift", false);
   prefs.clear();
   prefs.end();
+  Preferences p;
+  p.begin("liftmot", false);
+  p.clear();
+  p.end();
+  g_useEnc = true;
+  g_openGain = 0.45f;
 }

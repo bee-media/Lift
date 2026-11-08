@@ -136,7 +136,8 @@
     $('#k-target').textContent = s.target >= 0 ? N(s.target) + ' этаж' : '–';
     $('#k-speed').textContent = Math.abs(s.vel).toFixed(0) + ' мм/с';
     $('#k-pos').textContent = (s.pos / 10).toFixed(1) + ' см';
-    $('#k-counts').textContent = s.counts + ' импульсов';
+    $('#k-counts').textContent = s.counts + (s.noEnc ? ' (расчёт, энкодера нет)' : ' импульсов');
+    $('#noenc').classList.toggle('hidden', !s.noEnc);
     $('#k-pwm').textContent = s.pwm + ' %';
     $('#k-mode').textContent = (MODES[s.mode] || ['?'])[0];
     $('#queue').innerHTML = s.calls.length ? s.calls.map((f) => `<span class="chip on">${N(f)}</span>`).join('') : '<span class="why">никто не ждёт</span>';
@@ -205,6 +206,8 @@
       { k: 'pitch', l: 'Расстояние между этажами', t: 'num', min: 50, max: 150, step: 0.5, u: 'мм' },
       { k: 'hallZone', l: 'Ширина зоны датчика', t: 'num', min: 4, max: 40, step: 1, u: 'мм' },
       { k: 'cpm', l: 'Импульсов энкодера на 1 мм', h: 'Измеряется калибровкой', t: 'num', min: 0.5, max: 50, step: 0.01 },
+      { k: 'useEnc', l: 'Энкодер подключён', h: 'Выключите, пока мотор без энкодера: положение считается по времени, остановка по датчикам этажей', t: 'chk', simHide: true },
+      { k: 'openGain', l: 'Мощность на 1 мм/с (без энкодера)', h: 'Подбирается автоматически при калибровке', t: 'num', min: 0.05, max: 5, step: 0.01, simHide: true },
       { k: 'invMotor', l: 'Развернуть мотор', t: 'chk' },
       { k: 'invEnc', l: 'Развернуть энкодер', t: 'chk' },
       { k: 'invHall', l: 'Инвертировать датчики Холла', t: 'chk' },
@@ -240,7 +243,7 @@
       card.className = 'card';
       card.innerHTML = `<h2>${title}</h2>`;
       for (const f of fields) {
-        if (f.real && api.sim) continue;
+        if ((f.real || f.simHide) && api.sim) continue;
         const raw = cfg[f.k];
         const val = f.map ? f.map(raw) : raw;
         const wrap = document.createElement('div');
