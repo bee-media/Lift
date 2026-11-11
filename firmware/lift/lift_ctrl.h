@@ -189,6 +189,7 @@ class Lift {
   int8_t testDir = 0;
   float ioTestT = 0, blinkT = 0, chaseT = 0;   // проверка кнопок и светодиодов
   int8_t blinkFloor = -1, chaseIdx = -1;
+  float kickT = 0, lastU = 0;                  // толчок при страгивании без энкодера
   float noEdgeT = 0;                           // сколько секунд ни один датчик не менял состояние
   static constexpr float TEST_DUTY = 45.0f;   // мощность ручной проверки мотора, %
   float startMM = 0;
@@ -383,7 +384,7 @@ class Lift {
   bool homeRiseSeen = false;
 
   // ---- Мотор ----
-  void stopMotor() { iterm = 0; stuckT = 0; wrongT = 0; pwm = 0; cmdV = 0; HW::motorBrake(); }
+  void stopMotor() { iterm = 0; stuckT = 0; wrongT = 0; pwm = 0; cmdV = 0; lastU = 0; kickT = 0; HW::motorBrake(); }
 
   void driveVel(float vTarget, float dt) {
     cmdV = vTarget;
@@ -391,9 +392,17 @@ class Lift {
       // Без обратной связи: мощность прямо пропорциональна нужной скорости (коэффициент подбирает калибровка).
       float u = g_openGain * vTarget;
       if (fabsf(vTarget) > 1.0f) {
-        if (u > 0 && u < g_minDuty) u = g_minDuty;
-        if (u < 0 && u > -g_minDuty) u = -g_minDuty;
+        // Страгивание требует «мощности старта», а на ходу хватает меньшей («мощность на ходу»):
+        // после короткого толчка мощность падает, и кабина подходит к этажу медленнее.
+        if (fabsf(lastU) < 1.0f || lastU * u < 0) kickT = 0.35f;
+        float floorU = kickT > 0 ? g_minDuty : min((float)g_runDuty, (float)g_minDuty);
+        if (u > 0 && u < floorU) u = floorU;
+        if (u < 0 && u > -floorU) u = -floorU;
+      } else {
+        kickT = 0;
       }
+      if (kickT > 0) kickT -= dt;
+      lastU = u;
       pwm = u;
       HW::motorDrive(cfg.invMotor ? -u : u);
       cmdV = u / g_openGain;   // скорость, которую даёт эта мощность: по ней считаем положение
@@ -636,7 +645,8 @@ class Lift {
 
   void stepMoving(float dt) {
     float k = speedScale();
-    float vmax = cfg.vmax * k, a = cfg.accel * k, creep = min(cfg.creep, vmax);
+    float vmax = cfg.vmax * k, a = cfg.accel * k, dec = g_decel * k, creep = min(cfg.creep, vmax);
+    float appr = g_approach;   // путь подхода на скорости подхода, мм
     float pitch = cfg.pitch;
 
     // Проверка: не пропущен ли датчик, мимо которого проехали.
@@ -653,7 +663,7 @@ class Lift {
     }
 
     int dirNow = vcmd > 0.1f ? 1 : (vcmd < -0.1f ? -1 : dir);
-    float brake = (vcmd * vcmd) / (2 * a) / pitch + 0.02f;
+    float brake = (vcmd * vcmd) / (2 * dec) / pitch + 0.02f;
     DCall calls[MAX_FLOORS];
     int n = buildCalls(calls);
     if (!parking) {
@@ -669,13 +679,13 @@ class Lift {
     float dist = tmm - pos;
     float sgn = dist >= 0 ? 1.0f : -1.0f;
     float ad = fabsf(dist);
-    float want = max(min(vmax, sqrtf(2 * a * max(ad - 3.0f, 0.0f))), min(creep, ad * 3));
+    float want = max(min(vmax, sqrtf(2 * dec * max(ad - appr, 0.0f))), min(creep, ad * 3));
     // Без энкодера останавливаемся по датчику: пока датчик нужного этажа не сработал, ползём дальше
     // на скорости подхода, даже если по расчёту уже приехали. Сработал датчик: положение исправится само.
     bool waitHall = !g_useEnc && !seenRise[target];
     if (waitHall) {
       float mdir = (tmm >= startMM) ? 1.0f : -1.0f;
-      if (ad < 15.0f || sgn != mdir) { sgn = mdir; want = creep; }
+      if (ad < max(15.0f, appr) || sgn != mdir) { sgn = mdir; want = creep; }
       if ((pos - tmm) * mdir > 0.6f * pitch) {
         char b[64]; snprintf(b, sizeof(b), "Не вижу датчик на %d этаже", target + 1);
         setFault(b);
@@ -683,7 +693,9 @@ class Lift {
       }
     }
     float dv = sgn * want - vcmd;
-    float lim = a * dt;
+    // Разгоняемся с «разгоном», тормозим с «торможением».
+    bool speedingUp = sgn * vcmd >= 0 && fabsf(sgn * want) > fabsf(vcmd);
+    float lim = (speedingUp ? a : dec) * dt;
     vcmd += constrain(dv, -lim, lim);
     driveVel(vcmd, dt);
     if (state != ST_MOVING) return;

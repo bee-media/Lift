@@ -142,6 +142,9 @@ static String configJson() {
   s += ",\"useEnc\":"; s += g_useEnc ? "true" : "false";
   s += ",\"openGain\":"; s += String(g_openGain, 2);
   s += ",\"minDuty\":"; s += String(g_minDuty, 0);
+  s += ",\"decel\":"; s += f1(g_decel);
+  s += ",\"approach\":"; s += f1(g_approach);
+  s += ",\"runDuty\":"; s += String(g_runDuty, 0);
   s += ",\"invMotor\":"; s += c.invMotor ? "true" : "false";
   s += ",\"invEnc\":"; s += c.invEnc ? "true" : "false";
   s += ",\"invHall\":"; s += c.invHall ? "true" : "false";
@@ -161,8 +164,8 @@ static void applyConfigBody(const String& b) {
   if (jNum(b, "floors", v)) s.floors = constrain((int)v, 2, MAX_FLOORS);
   if (jStr(b, "mode", tmp, sizeof(tmp))) s.mode = !strcmp(tmp, "fifo") ? 1 : (!strcmp(tmp, "both") ? 2 : 0);
   if (jNum(b, "vmax", v)) s.vmax = constrain(v, 20.0f, 300.0f);
-  if (jNum(b, "accel", v)) s.accel = constrain(v, 50.0f, 1000.0f);
-  if (jNum(b, "creep", v)) s.creep = constrain(v, 5.0f, 60.0f);
+  if (jNum(b, "accel", v)) s.accel = constrain(v, 5.0f, 1000.0f);
+  if (jNum(b, "creep", v)) s.creep = constrain(v, 1.0f, 60.0f);
   if (jNum(b, "dwell", v)) s.dwell = constrain(v, 0.5f, 30.0f);
   if (jBool(b, "parkEnabled", bv)) s.parkEnabled = bv;
   if (jNum(b, "parkFloor", v)) s.parkFloor = constrain((int)v, 1, MAX_FLOORS);
@@ -192,7 +195,11 @@ static void applyConfigBody(const String& b) {
   if (jBool(b, "useEnc", bv)) g_useEnc = bv;
   if (jNum(b, "openGain", v)) g_openGain = constrain(v, 0.05f, 5.0f);
   if (jNum(b, "minDuty", v)) g_minDuty = constrain(v, 5.0f, 90.0f);
-  if (g_useEnc != encOld || g_openGain != gainOld || g_minDuty != minOld) motorOptSave();
+  float decOld = g_decel, apOld = g_approach, runOld = g_runDuty;
+  if (jNum(b, "decel", v)) g_decel = constrain(v, 5.0f, 1000.0f);
+  if (jNum(b, "approach", v)) g_approach = constrain(v, 1.0f, 50.0f);
+  if (jNum(b, "runDuty", v)) g_runDuty = constrain(v, 5.0f, 90.0f);
+  if (g_useEnc != encOld || g_openGain != gainOld || g_minDuty != minOld || g_decel != decOld || g_approach != apOld || g_runDuty != runOld) motorOptSave();
   if (g_useEnc != encOld) {
     liftLog(g_useEnc ? "Энкодер включён" : "Энкодер выключен: положение по времени и датчикам");
     lift.post(CMD_HOME);

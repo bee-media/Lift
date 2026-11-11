@@ -5,7 +5,7 @@
 
   const DEFAULTS = {
     floors: 5, mode: 'down',
-    vmax: 120, accel: 300, creep: 25, dwell: 3,
+    vmax: 120, accel: 300, decel: 300, creep: 25, approach: 3, dwell: 3,
     parkEnabled: false, parkFloor: 1, parkIdle: 60, longPress: 5,
     priorityOn: false, prioMask: '',
     brightness: 40, night: false, demo: false, slowmo: false, faultHall: -1,
@@ -108,6 +108,7 @@
     update(dt) {
       const c = this.cfg, pitch = c.pitch, k = this.scale();
       const vmax = c.vmax * k, a = c.accel * k, creep = Math.min(c.creep, vmax);
+      this.dec = c.decel * k;
       const topMM = (c.floors - 1) * pitch;
 
       if (this.ioTest > 0) this.ioTest -= dt;
@@ -193,7 +194,8 @@
     drive(dt, vmax, a, creep) {
       const pitch = this.cfg.pitch;
       const dirNow = this.vel > 0.1 ? 1 : this.vel < -0.1 ? -1 : this.dir;
-      const brake = (this.vel * this.vel) / (2 * a) / pitch + 0.02;
+      const dec = this.dec || a;
+      const brake = (this.vel * this.vel) / (2 * dec) / pitch + 0.02;
       if (!this.parking) {
         const r = D.plan({ mode: this.cfg.mode, calls: this.calls, pos: this.pos / pitch, dir: dirNow, moving: true, brake, target: this.target, priorityOn: this.cfg.priorityOn });
         if (r.target >= 0 && r.target !== this.target) { this.target = r.target; this.say(`Теперь еду на ${this.target + 1} этаж`); }
@@ -204,9 +206,12 @@
       const dist = this.target * pitch - this.pos;
       const sgn = Math.sign(dist) || 1;
       const ad = Math.abs(dist);
-      const want = Math.max(Math.min(vmax, Math.sqrt(2 * a * ad)), Math.min(creep, ad * 3));
+      const appr = this.cfg.approach;
+      const want = Math.max(Math.min(vmax, Math.sqrt(2 * dec * Math.max(ad - appr, 0))), Math.min(creep, ad * 3));
       const dv = sgn * want - this.vel;
-      this.vel += Math.max(-a * dt, Math.min(a * dt, dv));
+      const speedingUp = sgn * this.vel >= 0 && Math.abs(sgn * want) > Math.abs(this.vel);
+      const lim = (speedingUp ? a : dec) * dt;
+      this.vel += Math.max(-lim, Math.min(lim, dv));
       this.pos += this.vel * dt;
       if (Math.sign(this.target * pitch - this.pos) !== sgn || Math.abs(this.target * pitch - this.pos) < 0.3) {
         this.pos = this.target * pitch;

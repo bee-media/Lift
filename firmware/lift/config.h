@@ -152,6 +152,13 @@ static void apPassSave(const String& s) {
 static volatile bool g_useEnc = true;
 static volatile float g_openGain = 0.45f;
 static volatile float g_minDuty = 30.0f;
+// Плавность движения (отдельная область, чтобы не стирать остальные настройки):
+// g_decel: торможение, мм/с^2; g_approach: путь подхода на малой скорости, мм;
+// g_runDuty: минимальная мощность без энкодера уже на ходу, %. Страгивание требует g_minDuty, а катить
+// кабину можно и на меньшей мощности: после короткого толчка мощность снижается, и подход получается медленнее.
+static volatile float g_decel = 300.0f;
+static volatile float g_approach = 3.0f;
+static volatile float g_runDuty = 30.0f;
 
 static void motorOptLoad() {
   Preferences p;
@@ -159,6 +166,9 @@ static void motorOptLoad() {
   g_useEnc = p.getBool("enc", true);
   g_openGain = p.getFloat("gain", 0.45f);
   g_minDuty = p.getFloat("mind", 30.0f);
+  g_decel = p.getFloat("dec", 300.0f);
+  g_approach = p.getFloat("appr", 3.0f);
+  g_runDuty = p.getFloat("rund", 30.0f);
   p.end();
 }
 
@@ -168,6 +178,9 @@ static void motorOptSave() {
   p.putBool("enc", g_useEnc);
   p.putFloat("gain", g_openGain);
   p.putFloat("mind", g_minDuty);
+  p.putFloat("dec", g_decel);
+  p.putFloat("appr", g_approach);
+  p.putFloat("rund", g_runDuty);
   p.end();
 }
 
@@ -240,5 +253,6 @@ static void factoryReset() {
   g_useEnc = true;
   g_openGain = 0.45f;
   g_minDuty = 30.0f;
+  g_decel = 300.0f; g_approach = 3.0f; g_runDuty = 30.0f;
   g_nightAuto = false; g_nightFrom = 21 * 60; g_nightTo = 7 * 60; g_nightBright = 10;
 }
