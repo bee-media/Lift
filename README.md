@@ -8,6 +8,8 @@ It was designed for two children (4 and 9 years old) who play with it on their o
 
 > The web panel and the user manual in `docs/` are in Russian. Translations are welcome (see [Contributing](#contributing)).
 
+<p align="center"><img src="docs/img/photos/shaft-sections.jpg" alt="The printed shaft built from stackable sections" width="320"></p>
+
 ```
  phone / tablet ──Wi‑Fi──►  ESP32‑S3  ──I²C──► 2…4 × MCP23017 ──► buttons, Hall sensors (per floor)
    web panel                    │
@@ -21,20 +23,38 @@ It was designed for two children (4 and 9 years old) who play with it on their o
 
 ## Contents
 
-1. [Features](#features)
-2. [How the elevator decides where to go](#how-the-elevator-decides-where-to-go)
-3. [What you need](#what-you-need)
-4. [Repository layout](#repository-layout)
-5. [Quick start](#quick-start)
-6. [Wiring](#wiring)
-7. [The web panel](#the-web-panel)
-8. [Settings reference](#settings-reference)
-9. [Safety and fault handling](#safety-and-fault-handling)
-10. [Motor without an encoder](#motor-without-an-encoder)
-11. [Development](#development)
-12. [Project status](#project-status)
-13. [Contributing](#contributing)
-14. [License](#license)
+1. [Photos](#photos)
+2. [Features](#features)
+3. [How the elevator decides where to go](#how-the-elevator-decides-where-to-go)
+4. [What you need](#what-you-need)
+5. [Repository layout](#repository-layout)
+6. [Quick start](#quick-start)
+7. [Wiring](#wiring)
+8. [The web panel](#the-web-panel)
+9. [Settings reference](#settings-reference)
+10. [Safety and fault handling](#safety-and-fault-handling)
+11. [Motor without an encoder](#motor-without-an-encoder)
+12. [Development](#development)
+13. [Project status](#project-status)
+14. [Contributing](#contributing)
+15. [License](#license)
+
+---
+
+## Photos
+
+| | |
+|---|---|
+| <img src="docs/img/photos/shaft-sections.jpg" width="400"><br>The shaft: one identical printed section per floor, with door opening, landing, button/LED panel and diamond windows | <img src="docs/img/photos/motor-pulley.jpg" width="400"><br>N20 motor bracket with the V‑groove pulley and the nylon thread on the ceiling plate |
+| <img src="docs/img/photos/shaft-inside.jpg" width="400"><br>Looking down the shaft: guide ribs, T‑rails and diamond windows that the Hall sensors look through | <img src="docs/img/photos/section-joint.jpg" width="400"><br>Two stacked sections up close: door opening, landing, cable niche with a hook |
+
+### Web panel (screenshots, Russian UI)
+
+| | |
+|---|---|
+| <img src="docs/img/photos/panel-play.png" width="400"><br>Play: shaft, status, "what is happening inside" | <img src="docs/img/photos/panel-settings.png" width="400"><br>Settings: rule, speed, acceleration and braking |
+| <img src="docs/img/photos/panel-calibration.png" width="400"><br>Calibration and the button/LED test | <img src="docs/img/photos/panel-hall-table.png" width="400"><br>Hall sensors with the detected floor centres |
+| <img src="docs/img/photos/panel-log.png" width="400"><br>Service: the log (position corrections by the sensors) | |
 
 ---
 
