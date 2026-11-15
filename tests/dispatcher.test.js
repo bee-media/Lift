@@ -9,20 +9,30 @@ test('нет вызовов: стоим', () => {
   assert.deepStrictEqual(plan({ ...base, calls: [] }), { target: -1, dir: 0 });
 });
 
-test('простой: едем на самый старый вызов, если он выше, то на самый верхний', () => {
+test('простой: едем на самый старый вызов (порядок вызовов), остальные потом', () => {
   const r = plan({ ...base, pos: 2, calls: calls(5, 3, 7) });
-  assert.deepStrictEqual(r, { target: 7, dir: 1 });
+  assert.deepStrictEqual(r, { target: 5, dir: 1 });
 });
 
-test('вверх: вызовы ниже ждут, цель остаётся верхней', () => {
+test('первый вызвал 10-й, второй 5-й: сначала на 10-й', () => {
+  const r = plan({ ...base, pos: 0, calls: calls(9, 4) });
+  assert.deepStrictEqual(r, { target: 9, dir: 1 });
+});
+
+test('первый вызвал 5-й, второй 10-й: сначала на 5-й, не пролетая его', () => {
+  const r = plan({ ...base, pos: 0, calls: calls(4, 9) });
+  assert.deepStrictEqual(r, { target: 4, dir: 1 });
+});
+
+test('вверх: вызовы ниже ждут, цель остаётся прежней', () => {
   const r = plan({ ...base, pos: 2.5, dir: 1, moving: true, target: 7, calls: calls(7, 1, 4) });
   assert.strictEqual(r.target, 7);
   assert.strictEqual(r.dir, 1);
 });
 
-test('вверх: новый вызов выше продлевает цель', () => {
+test('вверх: новый вызов выше цели ждёт своей очереди, цель не меняется', () => {
   const r = plan({ ...base, pos: 2.5, dir: 1, moving: true, target: 5, calls: calls(5, 9) });
-  assert.strictEqual(r.target, 9);
+  assert.strictEqual(r.target, 5);
 });
 
 test('вниз: останавливаемся на ближайшем вызове по пути', () => {
@@ -71,9 +81,9 @@ test('приоритет выключен: игнорируется', () => {
   const cs = calls(2, 6);
   cs[1].prio = true;
   const r = plan({ ...base, pos: 0, priorityOn: false, calls: cs });
-  assert.strictEqual(r.target, 6); // «вверх до верхнего», так что 6 и без приоритета
+  assert.strictEqual(r.target, 2); // приоритета нет: идём по порядку вызовов, сначала 2
   const r2 = plan({ ...base, pos: 0, priorityOn: false, calls: [{ f: 2, t: 0, prio: false }, { f: 3, t: 1, prio: true }] });
-  assert.strictEqual(r2.target, 3);
+  assert.strictEqual(r2.target, 2);
 });
 
 test('движущаяся кабина, все вызовы позади: сохраняем текущую цель', () => {
@@ -91,4 +101,33 @@ test('ночное окно: обычное и через полночь', () =>
   assert.strictEqual(inWindow(h(7), h(21), h(7)), false);
   assert.strictEqual(inWindow(h(12), h(21), h(7)), false);
   assert.strictEqual(inWindow(h(5), h(6), h(6)), false);     // пустое окно
+});
+
+test('вниз: расчёт чуть проскочил цель (без энкодера), цель не теряется', () => {
+  const r = plan({ ...base, moving: true, dir: -1, pos: 2.97, target: 3, brake: 0.02, calls: calls(3, 2, 1) });
+  assert.deepStrictEqual(r, { target: 3, dir: -1 });
+});
+
+test('вверх: расчёт чуть проскочил цель, цель не теряется', () => {
+  const r = plan({ ...base, moving: true, dir: 1, pos: 4.03, target: 4, brake: 0.02, calls: calls(4, 1) });
+  assert.strictEqual(r.target, 4);
+});
+
+test('попутные вызовы: 5, 4, 3, 2 с 1-го этажа = вверх на 5, потом вниз с остановками на 4, 3, 2', () => {
+  let pos = 0, dir = 0;
+  const pending = [4, 3, 2, 1];
+  const visited = [];
+  let r = plan({ ...base, pos, calls: calls(...pending) });
+  // первый вызов 5-го этажа поступил раньше остальных
+  r = plan({ ...base, pos, calls: [{ f: 4, t: 0, prio: false }, { f: 3, t: 1, prio: false }, { f: 2, t: 2, prio: false }, { f: 1, t: 3, prio: false }] });
+  assert.deepStrictEqual(r, { target: 4, dir: 1 });
+  pos = 4; dir = 1;
+  const left = [{ f: 3, t: 1 }, { f: 2, t: 2 }, { f: 1, t: 3 }].map((c) => ({ ...c, prio: false }));
+  while (left.length) {
+    r = plan({ ...base, pos, dir, calls: left });
+    visited.push(r.target);
+    pos = r.target; dir = r.dir;
+    left.splice(left.findIndex((c) => c.f === r.target), 1);
+  }
+  assert.deepStrictEqual(visited, [3, 2, 1]);
 });

@@ -43,6 +43,16 @@ static DPlanOut dispatchPlan(const DPlanIn& s) {
   }
   if (m == 0) return keep;
 
+  // Без энкодера расчётное положение может чуть проскочить центр цели, пока датчик ещё не подтвердил этаж.
+  // Тогда цель всё равно считаем впереди, иначе лифт «забудет» её и поедет к другому вызову мимо.
+  float pos = s.pos;
+  if (s.moving && s.dir && s.target >= 0) {
+    float over = (float)s.dir * ((float)s.target - s.pos);
+    bool has = false;
+    for (int i = 0; i < m; i++) if (cand[i].f == s.target) has = true;
+    if (over < 0 && over > -0.5f && has) pos = (float)s.target - (float)s.dir * 1e-3f;
+  }
+
   auto oldest = [&](const DCall* a, int cnt) {
     int b = 0;
     for (int i = 1; i < cnt; i++) if (a[i].t < a[b].t) b = i;
@@ -51,13 +61,13 @@ static DPlanOut dispatchPlan(const DPlanIn& s) {
   auto nearest = [&](const DCall* a, int cnt) {
     int b = 0;
     for (int i = 1; i < cnt; i++) {
-      float di = fabsf((float)a[i].f - s.pos), db = fabsf((float)a[b].f - s.pos);
+      float di = fabsf((float)a[i].f - pos), db = fabsf((float)a[b].f - pos);
       if (di < db || (di == db && a[i].t < a[b].t)) b = i;
     }
     return a[b];
   };
   auto go = [&](int f, int dir, bool useDir) -> DPlanOut {
-    return { f, useDir ? dir : dSign((float)f, s.pos) };
+    return { f, useDir ? dir : dSign((float)f, pos) };
   };
 
   if (s.priorityOn) {
@@ -68,21 +78,21 @@ static DPlanOut dispatchPlan(const DPlanIn& s) {
 
   if (!s.moving) {
     for (int i = 0; i < m; i++)
-      if (fabsf((float)cand[i].f - s.pos) < 0.05f) return { cand[i].f, s.dir };
+      if (fabsf((float)cand[i].f - pos) < 0.05f) return { cand[i].f, s.dir };
   }
 
   if (s.mode == 1) return go(oldest(cand, m).f, 0, false);
 
   int dir = s.moving ? s.dir : 0;
   if (!dir) {
-    dir = dSign((float)oldest(cand, m).f, s.pos);
+    dir = dSign((float)oldest(cand, m).f, pos);
     if (!dir) dir = -1;
   }
 
   DCall above[MAX_FLOORS], below[MAX_FLOORS], ahead[MAX_FLOORS], back[MAX_FLOORS];
   int na = 0, nb = 0, nh = 0, nk = 0;
   for (int i = 0; i < m; i++) {
-    float d = (float)cand[i].f - s.pos;
+    float d = (float)cand[i].f - pos;
     if (d > D_EPS) above[na++] = cand[i];
     if (d < -D_EPS) below[nb++] = cand[i];
     if ((float)dir * d > D_EPS) ahead[nh++] = cand[i];
@@ -95,14 +105,15 @@ static DPlanOut dispatchPlan(const DPlanIn& s) {
     return keep;
   }
 
-  // Режим 0: вверх без остановок до самого верхнего вызова, вниз останавливаемся везде.
+  // Режим 0: порядок вызовов важнее всего. Вверх едем без остановок к САМОМУ РАННЕМУ вызову сверху,
+  // вниз останавливаемся у каждого вызова по пути. Новые вызовы выше цели ждут своей очереди.
   auto topOf = [&](const DCall* a, int cnt) { int mx = a[0].f; for (int i = 1; i < cnt; i++) if (a[i].f > mx) mx = a[i].f; return mx; };
   if (dir > 0) {
-    if (na) return go(topOf(above, na), 1, true);
+    if (na) return go(oldest(above, na).f, 1, true);
     if (nb) return go(topOf(below, nb), -1, true);
   } else {
     if (nb) return go(topOf(below, nb), -1, true);
-    if (na) return go(topOf(above, na), 1, true);
+    if (na) return go(oldest(above, na).f, 1, true);
   }
   return keep;
 }

@@ -31,9 +31,17 @@
     const cand = calls.filter((c) => reachable(c.f));
     if (!cand.length) return keep;
 
+    // Без энкодера расчётное положение может чуть проскочить центр цели, пока датчик ещё не подтвердил этаж.
+    // Тогда цель всё равно считаем впереди, иначе лифт «забудет» её и поедет к другому вызову мимо.
+    let pos = s.pos;
+    if (s.moving && s.dir && s.target >= 0) {
+      const over = s.dir * (s.target - s.pos);
+      if (over < 0 && over > -0.5 && cand.some((c) => c.f === s.target)) pos = s.target - s.dir * 1e-3;
+    }
+
     const byAge = (a, b) => a.t - b.t;
-    const near = (a, b) => Math.abs(a.f - s.pos) - Math.abs(b.f - s.pos) || a.t - b.t;
-    const sign = (f) => (f > s.pos + EPS ? 1 : f < s.pos - EPS ? -1 : 0);
+    const near = (a, b) => Math.abs(a.f - pos) - Math.abs(b.f - pos) || a.t - b.t;
+    const sign = (f) => (f > pos + EPS ? 1 : f < pos - EPS ? -1 : 0);
     const go = (f, dir) => ({ target: f, dir: dir !== undefined ? dir : sign(f) });
 
     // Приоритет: ближайший приоритетный вызов, остальные ждут.
@@ -44,7 +52,7 @@
 
     // Вызов на этаже, где кабина стоит, обслуживается сразу.
     if (!s.moving) {
-      const here = cand.find((c) => Math.abs(c.f - s.pos) < 0.05);
+      const here = cand.find((c) => Math.abs(c.f - pos) < 0.05);
       if (here) return { target: here.f, dir: s.dir || 0 };
     }
 
@@ -56,23 +64,24 @@
     if (!dir) dir = sign(cand.slice().sort(byAge)[0].f) || -1;
 
     if (s.mode === 'both') {
-      const ahead = cand.filter((c) => dir * (c.f - s.pos) > EPS).sort(near);
+      const ahead = cand.filter((c) => dir * (c.f - pos) > EPS).sort(near);
       if (ahead.length) return go(ahead[0].f, dir);
-      const back = cand.filter((c) => -dir * (c.f - s.pos) > EPS).sort(near);
+      const back = cand.filter((c) => -dir * (c.f - pos) > EPS).sort(near);
       if (back.length) return go(back[0].f, -dir);
       return keep;
     }
 
-    // 'down': вверх без остановок до самого верхнего вызова, вниз останавливаемся везде.
-    const above = cand.filter((c) => c.f > s.pos + EPS);
-    const below = cand.filter((c) => c.f < s.pos - EPS);
-    const top = (arr) => arr.reduce((m, c) => (c.f > m ? c.f : m), -1);
+    // 'down': порядок вызовов важнее всего. Вверх едем без остановок к САМОМУ РАННЕМУ вызову сверху,
+    // вниз останавливаемся у каждого вызова по пути. Новые вызовы выше цели ждут своей очереди.
+    const above = cand.filter((c) => c.f > pos + EPS);
+    const below = cand.filter((c) => c.f < pos - EPS);
+    const first = (arr) => arr.slice().sort(byAge)[0].f;
     if (dir > 0) {
-      if (above.length) return go(top(above), 1);
+      if (above.length) return go(first(above), 1);
       if (below.length) return go(below.sort((a, b) => b.f - a.f)[0].f, -1);
     } else {
       if (below.length) return go(below.sort((a, b) => b.f - a.f)[0].f, -1);
-      if (above.length) return go(top(above), 1);
+      if (above.length) return go(first(above), 1);
     }
     return keep;
   }
